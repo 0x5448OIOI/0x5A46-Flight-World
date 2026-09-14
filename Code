@@ -1,2926 +1,609 @@
--- ================= GUARDA DE VERSAO =================
--- Rodou de novo? A copia velha se mata sozinha.
-local ENV = (getgenv and getgenv()) or _G
-ENV.__PAINEL5A46_VERSAO = (ENV.__PAINEL5A46_VERSAO or 0) + 1
-local MINHA_VERSAO = ENV.__PAINEL5A46_VERSAO
-local function souAtual() return ENV.__PAINEL5A46_VERSAO == MINHA_VERSAO end
--- ====================================================
-local TweenService     = game:GetService("TweenService")
-local UserInputService = game:GetService("UserInputService")
-local RunService       = game:GetService("RunService")
-local Players          = game:GetService("Players")
-local HttpService      = game:GetService("HttpService")
-local LocalPlayer      = Players.LocalPlayer
--- imagem de fundo do painel (fica salva no arquivo abaixo)
-local BG = {
-    imagem       = "",   -- o que voce digitou (ID / link / arquivo)
-    arquivo      = "",   -- o arquivo ja baixado, pra nao baixar de novo
-    salt         = 0,    -- muda o nome do arquivo e fura o cache do Roblox
-    transparencia = 0.5,
-}
-local BG_ARQUIVO = "painel_0x5A46_fundo.json"
-local BG_PASTA   = "painel_0x5A46_fundos"
---==================================================================
--- ONDE PENDURAR AS GUIS
---==================================================================
-local function acharRaiz()
-    local cg = game:FindFirstChild("CoreGui")
-    if cg then
-        local ok = pcall(function()
-            local t = Instance.new("Folder") t.Name = "__t5a46" t.Parent = cg t:Destroy()
-        end)
-        if ok then return cg end
-    end
-    return LocalPlayer:WaitForChild("PlayerGui")
-end
-local RAIZ = acharRaiz()
-for _, n in ipairs({ "Panel_0x5A46", "Marcas_0x5A46" }) do
-    local v = RAIZ:FindFirstChild(n)
-    if v then pcall(function() v:Destroy() end) end
-end
---==================================================================
--- TEMA
---==================================================================
-local Theme = {
-	Window   = Color3.fromRGB(12, 12, 12),
-	Sidebar  = Color3.fromRGB(9, 9, 9),
-	Card     = Color3.fromRGB(19, 19, 19),
-	Field    = Color3.fromRGB(28, 28, 28),
-	Hover    = Color3.fromRGB(32, 32, 32),
-	Line     = Color3.fromRGB(34, 34, 34),
-	Stroke   = Color3.fromRGB(42, 42, 42),
-	Text     = Color3.fromRGB(240, 240, 240),
-	SubText  = Color3.fromRGB(135, 135, 135),
-	Dim      = Color3.fromRGB(88, 88, 88),
-	Accent   = Color3.fromRGB(255, 255, 255),
-	TrackOff = Color3.fromRGB(46, 46, 46),
-	KnobOn   = Color3.fromRGB(14, 14, 14),
-	KnobOff  = Color3.fromRGB(120, 120, 120),
-	Alert    = Color3.fromRGB(255, 255, 255),
-}
-local Glyphs = { Sort = "⇅", Check = "✓" }
-local FAST   = TweenInfo.new(0.13, Enum.EasingStyle.Quad,  Enum.EasingDirection.Out)
-local SMOOTH = TweenInfo.new(0.22, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
---==================================================================
--- HELPERS
---==================================================================
-local function new(class, props, children)
-	local obj, parent = Instance.new(class), nil
-	for key, value in pairs(props or {}) do
-		if key == "Parent" then parent = value else obj[key] = value end
-	end
-	for _, child in ipairs(children or {}) do child.Parent = obj end
-	obj.Parent = parent
-	return obj
-end
-local function corner(radius, parent)
-	return new("UICorner", { CornerRadius = UDim.new(0, radius), Parent = parent })
-end
-local function stroke(color, parent, thickness, transparency)
-	return new("UIStroke", {
-		Color = color, Thickness = thickness or 1, Transparency = transparency or 0,
-		ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Parent = parent,
-	})
-end
-local function pad(parent, t, r, b, l)
-	return new("UIPadding", {
-		PaddingTop = UDim.new(0, t), PaddingRight = UDim.new(0, r),
-		PaddingBottom = UDim.new(0, b), PaddingLeft = UDim.new(0, l), Parent = parent,
-	})
-end
-local function list(parent, gap, dir)
-	return new("UIListLayout", {
-		FillDirection = dir or Enum.FillDirection.Vertical,
-		SortOrder = Enum.SortOrder.LayoutOrder,
-		Padding = UDim.new(0, gap), Parent = parent,
-	})
-end
-local function tween(obj, goal, info)
-	local t = TweenService:Create(obj, info or FAST, goal)
-	t:Play()
-	return t
-end
---==================================================================
--- ICONES VETORIAIS
---==================================================================
-local Icons = {}
-local function shape(parent, x, y, w, h, radius, outlined)
-	local f = new("Frame", {
-		Position = UDim2.fromOffset(x, y), Size = UDim2.fromOffset(w, h),
-		BackgroundColor3 = Theme.Dim, BackgroundTransparency = outlined and 1 or 0,
-		BorderSizePixel = 0, Parent = parent,
-	})
-	if radius then corner(radius, f) end
-	if outlined then stroke(Theme.Dim, f, 1.3) end
-	return f
-end
-local function holderOf(parent, size)
-	return new("Frame", {
-		AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromOffset(size, size), BackgroundTransparency = 1, Parent = parent,
-	})
-end
-local function painter(parts)
-	return function(color, transparency)
-		for _, part in ipairs(parts) do
-			local st = part:FindFirstChildOfClass("UIStroke")
-			if st then tween(st, { Color = color, Transparency = transparency or 0 })
-			else tween(part, { BackgroundColor3 = color, BackgroundTransparency = transparency or 0 }) end
-		end
-	end
-end
-function Icons.bell(parent)
-	local h = holderOf(parent, 14)
-	return h, painter({ shape(h,3,2,8,7,4), shape(h,1,9,12,2,1), shape(h,6,11,2,2,1) })
-end
-function Icons.lock(parent)
-	local h = holderOf(parent, 14)
-	return h, painter({ shape(h,4,1,6,7,3,true), shape(h,2,6,10,7,2) })
-end
-function Icons.search(parent)
-	local h = holderOf(parent, 14)
-	local ring = shape(h,1,1,9,9,5,true)
-	local grip = shape(h,8,9,5,2,1)
-	grip.Rotation = 45
-	return h, painter({ ring, grip })
-end
-function Icons.bind(parent)
-	local h = holderOf(parent, 14)
-	return h, painter({ shape(h,3,3,1,8,1), shape(h,6,3,1,8,1), shape(h,9,3,1,8,1) })
-end
+-- 0x5A46 · painel completo num arquivo so.
+-- O codigo abaixo esta comprimido (LZSS + base64) porque o campo de
+-- colar do executor corta em 128 KB e o painel inteiro passa disso.
+-- Este cabecalho descomprime na memoria e roda. Nada e salvo em disco.
+local B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+local ORD = {}
+for i = 1, 64 do ORD[B64:sub(i, i)] = i - 1 end
 
---==================================================================
--- ICONES DE ABA  ·  desenhados num quadrado 16x16
---   {x, y, largura, altura, raio, rotacao, contorno}
---   posicao em ESCALA (x/16): nao arredonda e escala junto com o
---   tamanho pedido, entao o mesmo desenho serve em 14px ou 32px.
---==================================================================
-local ICON_DEFS = {
-	home = { parts = {
-		{3, 6, 10, 8, 2, 0, true},
-		{1.9, 3.5, 7, 1.8, 0.9, -45},
-		{7.1, 3.5, 7, 1.8, 0.9, 45},
-		{7, 10, 2, 4, 1},
-	}},
-	swords = { parts = {
-		{2.5, 7.1, 11, 1.8, 0.9, 45},
-		{2.5, 7.1, 11, 1.8, 0.9, -45},
-		{9.64, 11.09, 4.5, 1.6, 0.8, -45},
-		{1.86, 11.09, 4.5, 1.6, 0.8, 45},
-	}},
-	person = { clip = true, parts = {
-		{5.5, 1.5, 5, 5, 3, 0, true},
-		{2.5, 8.5, 11, 9, 5, 0, true},
-	}},
-	eye = { parts = {
-		{1, 3.5, 14, 9, 4.5, 0, true},
-		{6, 5.5, 4, 4, 2},
-	}},
-	sparkle = { parts = {
-		{7.1, 1, 1.8, 14, 0.9},
-		{1, 7.1, 14, 1.8, 0.9},
-		{3.5, 7.3, 9, 1.4, 0.7, 45},
-		{3.5, 7.3, 9, 1.4, 0.7, -45},
-	}},
-	sliders = { parts = {
-		{1, 3, 14, 1.6, 0.8},    {10, 2.05, 3.5, 3.5, 1.75},
-		{1, 7.2, 14, 1.6, 0.8},  {4, 6.25, 3.5, 3.5, 1.75},
-		{1, 11.4, 14, 1.6, 0.8}, {9, 10.45, 3.5, 3.5, 1.75},
-	}},
-	target = { parts = {
-		{1, 1, 14, 14, 7, 0, true},
-		{4.5, 4.5, 7, 7, 3.5, 0, true},
-		{6.5, 6.5, 3, 3, 1.5},
-	}},
-	coin = { parts = {
-		{2, 2, 12, 12, 6, 0, true},
-		{7.2, 4.6, 1.6, 6.8, 0.8},
-	}},
-	box = { parts = {
-		{2, 4.5, 12, 9.5, 2, 0, true},
-		{2, 4.5, 12, 3, 1},
-	}},
-	fish = { parts = {
-		{1.5, 5, 10, 6, 3},
-		{9.8, 5.3, 5, 1.6, 0.8, -35},
-		{9.8, 8.9, 5, 1.6, 0.8, 35},
-		{3.6, 7.2, 1.6, 1.6, 0.8},
-	}},
-	bolt = { parts = {
-		{7, 0.8, 2.6, 8, 1, 22},
-		{6.4, 7.2, 2.6, 8, 1, 22},
-	}},
-	dot = { parts = { {5.5, 5.5, 5, 5, 2.5} } },
-	-- escudo: corpo + ponta. A ponta e um quadrado girado 45, entao o
-	-- vertice de baixo vira o bico do escudo.
-	shield = { parts = {
-		{3.2, 1.6, 9.6, 7, 2, 0, true},
-		{4.8, 6.4, 6.4, 6.4, 1.6, 45, true},
-	}},
-	-- camiseta: corpo, duas mangas inclinadas e a gola
-	shirt = { parts = {
-		{4.6, 3.8, 6.8, 10.4, 1.6, 0, true},
-		{1.4, 3.4, 4.4, 3, 1, -25},
-		{10.2, 3.4, 4.4, 3, 1, 25},
-		{6.4, 3.2, 3.2, 1.9, 0.95},
-	}},
-	-- dois que eu desenhei pro nosso painel: nenhum dos de cima servia
-	-- pra Visual (luz) nem pra Teleport (lugar no mapa) sem repetir o
-	-- icone de outra aba.
-	sun = { parts = {
-		{4.5, 4.5, 7, 7, 3.5, 0, true},
-		{7.2, 0.8, 1.6, 2.8, 0.8},
-		{7.2, 12.4, 1.6, 2.8, 0.8},
-		{0.8, 7.2, 2.8, 1.6, 0.8},
-		{12.4, 7.2, 2.8, 1.6, 0.8},
-	}},
-	pin = { parts = {
-		{4, 1.2, 8, 8, 4, 0, true},
-		{6.6, 3.8, 2.8, 2.8, 1.4},
-		{7.2, 8.8, 1.6, 5.2, 0.8},
-	}},
-}
--- apelidos, pra poder escrever em portugues tambem
-local ICON_ALIAS = {
-	casa = "home", inicio = "home", espada = "swords", espadas = "swords",
-	farm = "swords", jogador = "person", player = "person", pessoa = "person",
-	olho = "eye", esp = "eye", brilho = "sparkle", custom = "sparkle",
-	config = "sliders", ajustes = "sliders", alvo = "target", mira = "target",
-	moeda = "coin", dinheiro = "coin", caixa = "box", item = "box",
-	peixe = "fish", pesca = "fish", raio = "bolt", ponto = "dot",
-	sol = "sun", luz = "sun", visual = "sun",
-	pino = "pin", lugar = "pin", teleporte = "pin", tp = "pin",
-	escudo = "shield", protecao = "shield", defesa = "shield",
-	camisa = "shirt", roupa = "shirt", avatar = "shirt",
-}
-
-local function drawParts(holder, parts, size)
-	local made = {}
-	for _, p in ipairs(parts) do
-		local w, h, r, outlined = p[3], p[4], p[5] or 0, p[7]
-		local f = new("Frame", {
-			Position = UDim2.fromScale(p[1] / 16, p[2] / 16),
-			Size     = UDim2.fromScale(w / 16, h / 16),
-			Rotation = p[6] or 0,
-			BackgroundColor3 = Theme.Dim,
-			BackgroundTransparency = outlined and 1 or 0,
-			BorderSizePixel = 0, Parent = holder,
-		})
-		if r > 0 then
-			-- raio maior que a metade do lado curto vira pilula
-			if r * 2 >= math.min(w, h) - 0.01 then
-				new("UICorner", { CornerRadius = UDim.new(1, 0), Parent = f })
-			else
-				new("UICorner", {
-					CornerRadius = UDim.new(0, math.max(1, math.floor(r * size / 16 + 0.5))),
-					Parent = f,
-				})
-			end
-		end
-		if outlined then stroke(Theme.Dim, f, math.max(1, size / 13)) end
-		table.insert(made, f)
-	end
-	return made
-end
-
-function Icons.has(name)
-	name = ICON_ALIAS[name] or name
-	return ICON_DEFS[name] ~= nil
-end
-
--- devolve (holder, paint) — paint(cor, transparencia)
-function Icons.draw(parent, name, size)
-	size = size or 16
-	name = ICON_ALIAS[name] or name
-	local def = ICON_DEFS[name]
-	if not def then return nil, nil end
-	local h = new("Frame", {
-		AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromOffset(size, size), BackgroundTransparency = 1,
-		ClipsDescendants = def.clip or false, Parent = parent,
-	})
-	return h, painter(drawParts(h, def.parts, size))
-end
-
-function Icons.names()
-	local t = {}
-	for nome in pairs(ICON_DEFS) do table.insert(t, nome) end
-	table.sort(t)
-	return t
-end
-
---==================================================================
--- KEYBIND
---==================================================================
-local MOUSE_NAMES = {
-	[Enum.UserInputType.MouseButton1] = "MB1",
-	[Enum.UserInputType.MouseButton2] = "MB2",
-	[Enum.UserInputType.MouseButton3] = "MB3",
-}
-local function bindLabel(bind)
-	if not bind then return "None" end
-	if bind.Mouse then return MOUSE_NAMES[bind.Mouse] or "Mouse" end
-	if bind.Key then return bind.Key.Name end
-	return "None"
-end
-local function bindMatches(bind, input)
-	if not bind then return false end
-	if bind.Mouse then return input.UserInputType == bind.Mouse end
-	if bind.Key then return input.KeyCode == bind.Key end
-	return false
-end
-local Listening = nil
---==================================================================
--- BIBLIOTECA
---==================================================================
-local Zero = {}
-local Window  = {}; Window.__index  = Window
-local Tab     = {}; Tab.__index     = Tab
-local Section = {}; Section.__index = Section
-function Zero.new(config)
-	config = config or {}
-	local self = setmetatable({}, Window)
-	self.Title     = config.Title or "0x5A46"
-	self.Tabs      = {}
-	self.Active    = nil
-	self.Minimized = false
-	self.ToggleKey = config.ToggleKey or Enum.KeyCode.RightControl
-	self.Binds     = {}
-	local size = config.Size or Vector2.new(772, 486)
-	self.Gui = new("ScreenGui", {
-		Name = "Panel_0x5A46", ResetOnSpawn = false, IgnoreGuiInset = true,
-		AutoLocalize = false, ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
-		DisplayOrder = 999,
-	})
-	if syn and syn.protect_gui then pcall(syn.protect_gui, self.Gui) end
-	self.Gui.Parent = RAIZ
-	self.Main = new("Frame", {
-		Name = "Window", AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromOffset(size.X, size.Y),
-		BackgroundColor3 = Theme.Window, BorderSizePixel = 0,
-		ClipsDescendants = true, Parent = self.Gui,
-	})
-	corner(14, self.Main)
-	stroke(Theme.Stroke, self.Main)
-	self.BgClip = new("Frame", {
-		Name = "FundoClip", Size = UDim2.fromScale(1, 1),
-		BackgroundTransparency = 1, BorderSizePixel = 0,
-		ClipsDescendants = true, ZIndex = 0, Parent = self.Main,
-	})
-	corner(14, self.BgClip)
-	self.BgImage = new("ImageLabel", {
-		Name = "Fundo", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
-		BorderSizePixel = 0, Image = "", ImageTransparency = BG.transparencia,
-		ScaleType = Enum.ScaleType.Crop, Visible = false, ZIndex = 0, Parent = self.BgClip,
-	})
-	corner(14, self.BgImage)
-	local bar = new("Frame", {
-		Name = "TitleBar", Size = UDim2.new(1, 0, 0, 48),
-		BackgroundTransparency = 1, ZIndex = 2, Parent = self.Main,
-	})
-	self.TitleLabel = new("TextLabel", {
-		Position = UDim2.fromOffset(20, 0), Size = UDim2.new(0, 240, 1, 0),
-		BackgroundTransparency = 1, Font = Enum.Font.GothamBold, Text = self.Title,
-		TextSize = 15, TextColor3 = Theme.Text,
-		TextXAlignment = Enum.TextXAlignment.Left, Parent = bar,
-	})
-	local searchBox = new("Frame", {
-		AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -54, 0.5, 0),
-		Size = UDim2.fromOffset(200, 28), BackgroundColor3 = Theme.Field,
-		BorderSizePixel = 0, Parent = bar,
-	})
-	corner(14, searchBox)
-	stroke(Theme.Line, searchBox)
-	do
-		local wrap = new("Frame", {
-			Position = UDim2.fromOffset(11, 0), Size = UDim2.new(0, 14, 1, 0),
-			BackgroundTransparency = 1, Parent = searchBox,
-		})
-		local _, paint = Icons.search(wrap)
-		paint(Theme.Dim, 0)
-	end
-	self.Search = new("TextBox", {
-		Position = UDim2.fromOffset(30, 0), Size = UDim2.new(1, -40, 1, 0),
-		BackgroundTransparency = 1, Font = Enum.Font.GothamMedium, Text = "",
-		PlaceholderText = "Search", PlaceholderColor3 = Theme.Dim, TextSize = 12,
-		TextColor3 = Theme.Text, TextXAlignment = Enum.TextXAlignment.Left,
-		ClearTextOnFocus = false, Parent = searchBox,
-	})
-	local minimize = new("TextButton", {
-		AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -18, 0.5, 0),
-		Size = UDim2.fromOffset(24, 24), BackgroundColor3 = Theme.Field,
-		BackgroundTransparency = 1, AutoButtonColor = false, Font = Enum.Font.GothamBold,
-		Text = "—", TextSize = 14, TextColor3 = Theme.SubText, Parent = bar,
-	})
-	corner(8, minimize)
-	self.Body = new("Frame", {
-		Position = UDim2.fromOffset(0, 48), Size = UDim2.new(1, 0, 1, -48),
-		BackgroundTransparency = 1, ZIndex = 2, Parent = self.Main,
-	})
-	local SIDE_T = 0.18
-	local sideShell = new("Frame", {
-		Size = UDim2.new(0, 172, 1, 0), BackgroundColor3 = Theme.Sidebar,
-		BackgroundTransparency = SIDE_T, BorderSizePixel = 0, ZIndex = 2, Parent = self.Body,
-	})
-	corner(14, sideShell)
-	new("Frame", {
-		Size = UDim2.new(1, 0, 0, 14), BackgroundColor3 = Theme.Sidebar,
-		BackgroundTransparency = SIDE_T, BorderSizePixel = 0, ZIndex = 1, Parent = sideShell,
-	})
-	new("Frame", {
-		AnchorPoint = Vector2.new(1, 0), Position = UDim2.fromScale(1, 0),
-		Size = UDim2.new(0, 14, 1, 0), BackgroundColor3 = Theme.Sidebar,
-		BackgroundTransparency = SIDE_T, BorderSizePixel = 0, ZIndex = 1, Parent = sideShell,
-	})
-	local sidebar = new("ScrollingFrame", {
-		Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, BorderSizePixel = 0,
-		CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
-		ScrollBarThickness = 2, ScrollBarImageColor3 = Theme.Stroke,
-		ZIndex = 3, Parent = sideShell,
-	})
-	pad(sidebar, 6, 12, 12, 12)
-	list(sidebar, 4)
-	self.SideBar = sidebar
-	new("Frame", {
-		Position = UDim2.fromOffset(172, 0), Size = UDim2.new(0, 1, 1, 0),
-		BackgroundColor3 = Theme.Line, BorderSizePixel = 0, ZIndex = 3, Parent = self.Body,
-	})
-	self.Pages = new("Frame", {
-		Position = UDim2.fromOffset(173, 0), Size = UDim2.new(1, -173, 1, 0),
-		BackgroundTransparency = 1, ZIndex = 2, Parent = self.Body,
-	})
-	self.Toasts = new("Frame", {
-		Name = "Notifications", AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.new(1, -18, 0, 72), Size = UDim2.fromOffset(286, 0),
-		AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, Parent = self.Gui,
-	})
-	list(self.Toasts, 8)
-	self.MiniSize = config.MiniSize or Vector2.new(168, 50)
-	self.Mini = new("Frame", {
-		Name = "Mini", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
-		Visible = false, ZIndex = 20, Parent = self.Main,
-	})
-	self.MiniImage = new("ImageLabel", {
-		AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.new(1, -2, 1, -2), BackgroundColor3 = Theme.Card,
-		BorderSizePixel = 0, Image = "", ScaleType = Enum.ScaleType.Crop,
-		ClipsDescendants = true, ZIndex = 20, Parent = self.Mini,
-	})
-	corner(14, self.MiniImage)
-	self.MiniLabel = new("TextLabel", {
-		Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
-		Font = Enum.Font.GothamBold, Text = "0x5A46", TextSize = 15,
-		TextColor3 = Color3.new(1, 1, 1), TextStrokeTransparency = 0.45,
-		ZIndex = 21, Parent = self.Mini,
-	})
-	local miniBtn = new("TextButton", {
-		Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
-		AutoButtonColor = false, Text = "", ZIndex = 22, Parent = self.Mini,
-	})
-	function self:SyncMini()
-		if not self.MiniImage then return end
-		self.MiniImage.Image = self.BgImage and self.BgImage.Image or ""
-		self.MiniImage.ImageTransparency = 0
-		self.MiniImage.BackgroundColor3 = Theme.Card
-	end
-	self:_enableDrag(bar)
-	minimize.MouseEnter:Connect(function()
-		tween(minimize, { BackgroundTransparency = 0, TextColor3 = Theme.Text })
-	end)
-	minimize.MouseLeave:Connect(function()
-		tween(minimize, { BackgroundTransparency = 1, TextColor3 = Theme.SubText })
-	end)
-	function self:ToggleMinimize()
-		self.Minimized = not self.Minimized
-		self.Body.Visible       = not self.Minimized
-		self.TitleLabel.Visible = not self.Minimized
-		searchBox.Visible       = not self.Minimized
-		minimize.Visible        = not self.Minimized
-		self.BgClip.Visible     = not self.Minimized
-		if self.Minimized then self:SyncMini() end
-		self.Mini.Visible = self.Minimized
-		tween(self.Main, {
-			Size = self.Minimized and UDim2.fromOffset(self.MiniSize.X, self.MiniSize.Y)
-			                      or  UDim2.fromOffset(size.X, size.Y),
-		}, SMOOTH)
-	end
-	minimize.MouseButton1Click:Connect(function() self:ToggleMinimize() end)
-	self:_enableDrag(miniBtn)
-	do
-		local pressPos, moveu = nil, false
-		miniBtn.InputBegan:Connect(function(input)
-			if input.UserInputType == Enum.UserInputType.MouseButton1
-				or input.UserInputType == Enum.UserInputType.Touch then
-				pressPos, moveu = input.Position, false
-			end
-		end)
-		miniBtn.InputChanged:Connect(function(input)
-			if pressPos and (input.UserInputType == Enum.UserInputType.MouseMovement
-				or input.UserInputType == Enum.UserInputType.Touch) then
-				if (input.Position - pressPos).Magnitude > 6 then moveu = true end
-			end
-		end)
-		miniBtn.InputEnded:Connect(function(input)
-			if input.UserInputType == Enum.UserInputType.MouseButton1
-				or input.UserInputType == Enum.UserInputType.Touch then
-				if pressPos and not moveu and self.Minimized then self:ToggleMinimize() end
-				pressPos = nil
-			end
-		end)
-	end
-	self.Search:GetPropertyChangedSignal("Text"):Connect(function()
-		self:_filter(self.Search.Text)
-	end)
-	UserInputService.InputBegan:Connect(function(input, processed)
-		if not souAtual() then return end
-		if Listening then return end
-		if processed then return end
-		if input.KeyCode == self.ToggleKey then self:ToggleMinimize() return end
-		if input.KeyCode == Enum.KeyCode.End then
-			self.Gui.Enabled = not self.Gui.Enabled
-			return
-		end
-		for _, entry in ipairs(self.Binds) do
-			if bindMatches(entry.Bind(), input) then entry.Fire() end
-		end
-	end)
-	self.Main.Size = UDim2.fromOffset(size.X, 48)
-	tween(self.Main, { Size = UDim2.fromOffset(size.X, size.Y) }, SMOOTH)
-	return self
-end
-function Window:_enableDrag(handle)
-	local dragging, startPos, startInput = false, nil, nil
-	handle.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1
-			or input.UserInputType == Enum.UserInputType.Touch then
-			dragging, startPos, startInput = true, self.Main.Position, input.Position
-			input.Changed:Connect(function()
-				if input.UserInputState == Enum.UserInputState.End then dragging = false end
-			end)
-		end
-	end)
-	UserInputService.InputChanged:Connect(function(input)
-		if not dragging or not souAtual() then return end
-		if input.UserInputType == Enum.UserInputType.MouseMovement
-			or input.UserInputType == Enum.UserInputType.Touch then
-			local delta = input.Position - startInput
-			self.Main.Position = UDim2.new(
-				startPos.X.Scale, startPos.X.Offset + delta.X,
-				startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-		end
-	end)
-end
-function Window:_filter(term)
-	term = string.lower(term or "")
-	local tab = self.Active
-	if not tab then return end
-	for _, section in ipairs(tab.Sections) do
-		local titleMatch = string.find(string.lower(section.Title), term, 1, true) ~= nil
-		local visible = 0
-		for _, element in ipairs(section.Elements) do
-			local match = term == "" or titleMatch
-				or string.find(string.lower(element.Name), term, 1, true) ~= nil
-			element.Frame.Visible = match
-			if match and element.Name ~= "" then visible = visible + 1 end
-		end
-		section.Frame.Visible = (term == "") or titleMatch or visible > 0
-	end
-end
-function Window:Notify(options)
-	options = options or {}
-	local duration = options.Duration or 4
-	local holder = new("Frame", {
-		Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
-		BackgroundTransparency = 1, Parent = self.Toasts,
-	})
-	local card = new("Frame", {
-		Position = UDim2.fromScale(1.1, 0), Size = UDim2.new(1, 0, 0, 0),
-		AutomaticSize = Enum.AutomaticSize.Y, BackgroundColor3 = Theme.Card,
-		BorderSizePixel = 0, Parent = holder,
-	})
-	corner(11, card)
-	stroke(Theme.Stroke, card)
-	pad(card, 12, 14, 13, 14)
-	list(card, 3)
-	local head = new("Frame", {
-		Size = UDim2.new(1, 0, 0, 16), BackgroundTransparency = 1, Parent = card,
-	})
-	do
-		local wrap = new("Frame", {
-			Size = UDim2.fromOffset(18, 16), BackgroundTransparency = 1, Parent = head,
-		})
-		local _, paint = Icons.bell(wrap)
-		paint(Theme.SubText, 0)
-	end
-	new("TextLabel", {
-		Position = UDim2.fromOffset(22, 0), Size = UDim2.new(1, -22, 1, 0),
-		BackgroundTransparency = 1, Font = Enum.Font.GothamBold,
-		Text = options.Title or "Notice", TextSize = 13, TextColor3 = Theme.Text,
-		TextXAlignment = Enum.TextXAlignment.Left, Parent = head,
-	})
-	if options.Text then
-		new("TextLabel", {
-			Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
-			BackgroundTransparency = 1, Font = Enum.Font.Gotham, Text = options.Text,
-			TextSize = 11, TextColor3 = Theme.SubText,
-			TextXAlignment = Enum.TextXAlignment.Left, TextWrapped = true, Parent = card,
-		})
-	end
-	local track = new("Frame", {
-		Size = UDim2.new(1, 0, 0, 2), BackgroundColor3 = Theme.Line,
-		BorderSizePixel = 0, Parent = card,
-	})
-	corner(1, track)
-	local fill = new("Frame", {
-		Size = UDim2.fromScale(1, 1), BackgroundColor3 = Theme.Accent,
-		BorderSizePixel = 0, Parent = track,
-	})
-	corner(1, fill)
-	tween(card, { Position = UDim2.fromScale(0, 0) }, SMOOTH)
-	tween(fill, { Size = UDim2.fromScale(0, 1) }, TweenInfo.new(duration, Enum.EasingStyle.Linear))
-	task.delay(duration, function()
-		if not card.Parent then return end
-		tween(card, { Position = UDim2.fromScale(1.1, 0) }, SMOOTH)
-		task.wait(0.24)
-		holder:Destroy()
-	end)
-end
---------------------------------------------------------------------
--- CABECALHO DA SIDEBAR  ·  win:Group("GAME")
--- So um rotulo com pontinho, pra separar grupos de aba.
---------------------------------------------------------------------
--- "ordem" existe porque a sidebar ordena por LayoutOrder: as abas de
--- jogo ficam em 0 e as do painel em 100/101, entao o cabecalho precisa
--- dizer em que faixa ele entra, senao cai em cima de tudo.
-function Window:Group(text, ordem)
-	local row = new("Frame", {
-		Size = UDim2.new(1, 0, 0, 24), BackgroundTransparency = 1,
-		LayoutOrder = ordem or -1, Parent = self.SideBar,
-	})
-	local ponto = new("Frame", {
-		AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 3, 0.5, 1),
-		Size = UDim2.fromOffset(4, 4), BackgroundColor3 = Theme.Accent,
-		BackgroundTransparency = 0.35, BorderSizePixel = 0, Parent = row,
-	})
-	corner(2, ponto)
-	new("TextLabel", {
-		Position = UDim2.fromOffset(14, 0), Size = UDim2.new(1, -14, 1, 0),
-		BackgroundTransparency = 1, Font = Enum.Font.GothamBold,
-		Text = string.upper(text), TextSize = 10, TextColor3 = Theme.Dim,
-		TextXAlignment = Enum.TextXAlignment.Left, Parent = row,
-	})
-	return row
-end
-
-function Window:Tab(name, icon)
-	local tab = setmetatable({ Name = name, Sections = {}, Window = self }, Tab)
-	local button = new("TextButton", {
-		Size = UDim2.new(1, 0, 0, 36), BackgroundColor3 = Theme.Hover,
-		BackgroundTransparency = 1, AutoButtonColor = false, Text = "", Parent = self.SideBar,
-	})
-	corner(9, button)
-	local indicator = new("Frame", {
-		AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, -12, 0.5, 0),
-		Size = UDim2.fromOffset(2, 0), BackgroundColor3 = Theme.Accent,
-		BorderSizePixel = 0, Parent = button,
-	})
-	corner(1, indicator)
-	-- icone: se o nome bater com um desenho, desenha. Se nao bater, cai
-	-- no texto de antes — assim P.Tab("X", "◉") continua funcionando.
-	local iconSlot = new("Frame", {
-		Position = UDim2.fromOffset(11, 0), Size = UDim2.new(0, 20, 1, 0),
-		BackgroundTransparency = 1, Parent = button,
-	})
-	local paintIcon
-	if type(icon) == "string" and Icons.has(icon) then
-		local _, p = Icons.draw(iconSlot, icon, 16)
-		paintIcon = p
-		paintIcon(Theme.SubText, 0)
-	else
-		local lbl = new("TextLabel", {
-			Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
-			Font = Enum.Font.GothamMedium, Text = icon or "•", TextSize = 14,
-			TextColor3 = Theme.SubText, Parent = iconSlot,
-		})
-		paintIcon = function(color) tween(lbl, { TextColor3 = color }) end
-	end
-	local textLabel = new("TextLabel", {
-		Position = UDim2.fromOffset(38, 0), Size = UDim2.new(1, -46, 1, 0),
-		BackgroundTransparency = 1, Font = Enum.Font.GothamMedium, Text = name,
-		TextSize = 13, TextColor3 = Theme.SubText,
-		TextXAlignment = Enum.TextXAlignment.Left, Parent = button,
-	})
-	local page = new("Frame", {
-		Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
-		Visible = false, Parent = self.Pages,
-	})
-	local function column(xScale, xOffset)
-		local col = new("ScrollingFrame", {
-			Position = UDim2.new(xScale, xOffset, 0, 0), Size = UDim2.new(0.5, -22, 1, 0),
-			BackgroundTransparency = 1, BorderSizePixel = 0, CanvasSize = UDim2.new(),
-			AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollBarThickness = 2,
-			ScrollBarImageColor3 = Theme.Stroke, Parent = page,
-		})
-		pad(col, 16, 6, 16, 0)
-		list(col, 12)
-		return col
-	end
-	tab.Columns = { column(0, 16), column(0.5, 6) }
-	tab.Button, tab.Page = button, page
-	tab.Indicator, tab.Icon, tab.Label = indicator, iconSlot, textLabel
-	tab.PaintIcon = paintIcon
-	button.MouseEnter:Connect(function()
-		if self.Active ~= tab then tween(button, { BackgroundTransparency = 0.45 }) end
-	end)
-	button.MouseLeave:Connect(function()
-		if self.Active ~= tab then tween(button, { BackgroundTransparency = 1 }) end
-	end)
-	button.MouseButton1Click:Connect(function() self:Select(tab) end)
-	table.insert(self.Tabs, tab)
-	if #self.Tabs == 1 then self:Select(tab) end
-	return tab
-end
-function Window:Select(tab)
-	for _, other in ipairs(self.Tabs) do
-		local on = other == tab
-		other.Page.Visible = on
-		tween(other.Button,    { BackgroundTransparency = on and 0 or 1 })
-		tween(other.Label,     { TextColor3 = on and Theme.Text or Theme.SubText })
-		other.PaintIcon(on and Theme.Text or Theme.SubText, 0)
-		tween(other.Indicator, { Size = UDim2.fromOffset(2, on and 16 or 0) }, SMOOTH)
-	end
-	self.Active = tab
-	self:_filter(self.Search.Text)
-end
-function Tab:Section(title, description, column)
-	local section = setmetatable({ Title = title, Elements = {}, Window = self.Window }, Section)
-	local card = new("Frame", {
-		Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
-		BackgroundColor3 = Theme.Card, BackgroundTransparency = 0.22,
-		BorderSizePixel = 0, Parent = self.Columns[column or 1],
-	})
-	corner(12, card)
-	stroke(Theme.Stroke, card, 1, 0.35)
-	pad(card, 14, 14, 14, 16)
-	list(card, 9)
-	local header = new("Frame", {
-		Size = UDim2.new(1, 0, 0, description and 36 or 20),
-		BackgroundTransparency = 1, LayoutOrder = -1, Parent = card,
-	})
-	new("TextLabel", {
-		Size = UDim2.new(1, -26, 0, 18), BackgroundTransparency = 1,
-		Font = Enum.Font.GothamBold, Text = title, TextSize = 15, TextColor3 = Theme.Text,
-		TextXAlignment = Enum.TextXAlignment.Left, Parent = header,
-	})
-	if description then
-		new("TextLabel", {
-			Position = UDim2.fromOffset(0, 20), Size = UDim2.new(1, -26, 0, 14),
-			BackgroundTransparency = 1, Font = Enum.Font.Gotham, Text = description,
-			TextSize = 11, TextColor3 = Theme.SubText,
-			TextXAlignment = Enum.TextXAlignment.Left, Parent = header,
-		})
-	end
-	local locked = false
-	local lock = new("TextButton", {
-		AnchorPoint = Vector2.new(1, 0), Position = UDim2.fromScale(1, 0),
-		Size = UDim2.fromOffset(20, 20), BackgroundTransparency = 1,
-		AutoButtonColor = false, Text = "", Parent = header,
-	})
-	local _, paintLock = Icons.lock(lock)
-	paintLock(Theme.Dim, 0.3)
-	lock.MouseButton1Click:Connect(function()
-		locked = not locked
-		paintLock(locked and Theme.Text or Theme.Dim, locked and 0 or 0.3)
-		section.Locked = locked
-		if section.OnLock then section.OnLock(locked) end
-	end)
-	section.Frame = card
-	table.insert(self.Sections, section)
-	return section
-end
-function Section:_row(height)
-	return new("Frame", {
-		Size = UDim2.new(1, 0, 0, height or 26),
-		BackgroundTransparency = 1, Parent = self.Frame,
-	})
-end
-function Section:_track(element)
-	table.insert(self.Elements, element)
-	return element
-end
-function Section:_keybind(parent, default, onChange)
-	local bind = default
-	local holder = new("Frame", {
-		Size = UDim2.new(0, 0, 1, 0), AutomaticSize = Enum.AutomaticSize.X,
-		BackgroundTransparency = 1, Parent = parent,
-	})
-	list(holder, 6, Enum.FillDirection.Horizontal).VerticalAlignment = Enum.VerticalAlignment.Center
-	do
-		local wrap = new("Frame", {
-			Size = UDim2.fromOffset(14, 20), BackgroundTransparency = 1, Parent = holder,
-		})
-		local _, paint = Icons.bind(wrap)
-		paint(Theme.Dim, 0)
-	end
-	local chip = new("TextButton", {
-		AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, 20),
-		BackgroundColor3 = Theme.Field, AutoButtonColor = false, BorderSizePixel = 0,
-		Font = Enum.Font.GothamBold, Text = bindLabel(bind), TextSize = 11,
-		TextColor3 = Theme.SubText, Parent = holder,
-	})
-	corner(6, chip)
-	pad(chip, 0, 8, 0, 8)
-	new("UISizeConstraint", { MinSize = Vector2.new(24, 20), Parent = chip })
-	local function paint(listening)
-		chip.Text = listening and "..." or bindLabel(bind)
-		tween(chip, {
-			BackgroundColor3 = listening and Theme.Hover or Theme.Field,
-			TextColor3 = listening and Theme.Text or (bind and Theme.Text or Theme.Dim),
-		})
-	end
-	paint(false)
-	local function stopListening()
-		if Listening and Listening.chip == chip then
-			Listening.conn:Disconnect()
-			Listening = nil
-		end
-		paint(false)
-	end
-	local function startListening()
-		if Listening then Listening.stop() end
-		paint(true)
-		task.defer(function()
-			if not chip.Parent then return end
-			local conn
-			conn = UserInputService.InputBegan:Connect(function(input)
-				if input.KeyCode == Enum.KeyCode.Escape then stopListening() return end
-				local captured
-				if input.UserInputType == Enum.UserInputType.Keyboard
-					and input.KeyCode ~= Enum.KeyCode.Unknown then
-					captured = { Key = input.KeyCode }
-				elseif MOUSE_NAMES[input.UserInputType] then
-					captured = { Mouse = input.UserInputType }
-				end
-				if captured then
-					bind = captured
-					stopListening()
-					if onChange then task.spawn(onChange, bind, bindLabel(bind)) end
-				end
-			end)
-			Listening = { chip = chip, conn = conn, stop = stopListening }
-		end)
-	end
-	local hovering = false
-	chip.MouseEnter:Connect(function()
-		hovering = true
-		if not Listening then tween(chip, { BackgroundColor3 = Theme.Hover }) end
-	end)
-	chip.MouseLeave:Connect(function()
-		hovering = false
-		if not Listening then tween(chip, { BackgroundColor3 = Theme.Field }) end
-	end)
-	UserInputService.InputBegan:Connect(function(input)
-		if not souAtual() then return end
-		if not chip.Parent or not hovering then return end
-		if Listening and Listening.chip == chip then return end
-		local kind = input.UserInputType
-		if kind == Enum.UserInputType.MouseButton3 or kind == Enum.UserInputType.MouseButton1 then
-			startListening()
-		elseif kind == Enum.UserInputType.MouseButton2 then
-			bind = nil
-			stopListening()
-			if onChange then task.spawn(onChange, nil, "None") end
-		end
-	end)
-	return {
-		Get = function() return bind end,
-		Set = function(_, value) bind = value paint(false) end,
-	}
-end
-function Section:_bell(parent, xOffset, onChange)
-	local on = false
-	local button = new("TextButton", {
-		AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, xOffset, 0.5, 0),
-		Size = UDim2.fromOffset(22, 22), BackgroundTransparency = 1,
-		AutoButtonColor = false, Text = "", Parent = parent,
-	})
-	local _, paint = Icons.bell(button)
-	paint(Theme.Dim, 0.3)
-	button.MouseButton1Click:Connect(function()
-		on = not on
-		paint(on and Theme.Alert or Theme.Dim, on and 0 or 0.3)
-		if onChange then onChange(on) end
-	end)
-	return { Get = function() return on end }
-end
-function Section:Toggle(options)
-	options = options or {}
-	local state = options.Default or false
-	local window = self.Window
-	local row = self:_row(26)
-	local api, bell, keybind = {}, nil, nil
-	if options.Name then
-		new("TextLabel", {
-			Size = UDim2.new(1, options.Keybind ~= nil and -150 or -100, 1, 0),
-			BackgroundTransparency = 1, Font = Enum.Font.GothamMedium, Text = options.Name,
-			TextSize = 12, TextColor3 = Theme.Text,
-			TextXAlignment = Enum.TextXAlignment.Left,
-			TextTruncate = Enum.TextTruncate.AtEnd, Parent = row,
-		})
-	end
-	local track = new("TextButton", {
-		AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, 0, 0.5, 0),
-		Size = UDim2.fromOffset(40, 21),
-		BackgroundColor3 = state and Theme.Accent or Theme.TrackOff,
-		AutoButtonColor = false, Text = "", BorderSizePixel = 0, Parent = row,
-	})
-	corner(11, track)
-	local knob = new("Frame", {
-		AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, state and 22 or 3, 0.5, 0),
-		Size = UDim2.fromOffset(15, 15),
-		BackgroundColor3 = state and Theme.KnobOn or Theme.KnobOff,
-		BorderSizePixel = 0, Parent = track,
-	})
-	corner(8, knob)
-	if options.Bell ~= false then bell = self:_bell(row, -52) end
-	if options.Keybind ~= nil then
-		local slot = new("Frame", {
-			Position = UDim2.fromOffset(0, 0), Size = UDim2.new(0, 0, 1, 0),
-			AutomaticSize = Enum.AutomaticSize.X, BackgroundTransparency = 1, Parent = row,
-		})
-		if options.Name then
-			slot.AnchorPoint = Vector2.new(1, 0.5)
-			slot.Position = UDim2.new(1, -84, 0.5, 0)
-		end
-		keybind = self:_keybind(slot, options.Keybind, options.OnKeybind)
-	end
-	local function render()
-		tween(track, { BackgroundColor3 = state and Theme.Accent or Theme.TrackOff }, SMOOTH)
-		tween(knob, {
-			Position = UDim2.new(0, state and 22 or 3, 0.5, 0),
-			BackgroundColor3 = state and Theme.KnobOn or Theme.KnobOff,
-		}, SMOOTH)
-	end
-	local function flip(silent)
-		state = not state
-		render()
-		if bell and bell.Get() then
-			window:Notify({
-				Title = options.Name or self.Title,
-				Text = state and "ativado" or "desativado",
-			})
-		end
-		if not silent and options.Callback then task.spawn(options.Callback, state) end
-	end
-	track.MouseButton1Click:Connect(function() flip(false) end)
-	if keybind then
-		table.insert(window.Binds, {
-			Bind = function() return keybind.Get() end,
-			Fire = function() flip(false) end,
-		})
-	end
-	function api:Set(value, silent)
-		state = value and true or false
-		render()
-		if not silent and options.Callback then task.spawn(options.Callback, state) end
-	end
-	function api:Get() return state end
-	function api:GetBind() return keybind and keybind.Get() end
-	self:_track({ Frame = row, Name = options.Name or self.Title, Api = api })
-	return api
-end
-function Section:Checkbox(options)
-	options = options or {}
-	local state = options.Default or false
-	local row = self:_row(24)
-	new("TextLabel", {
-		Size = UDim2.new(1, -60, 1, 0), BackgroundTransparency = 1,
-		Font = Enum.Font.GothamMedium, Text = options.Name or "Checkbox", TextSize = 12,
-		TextColor3 = Theme.Text, TextXAlignment = Enum.TextXAlignment.Left, Parent = row,
-	})
-	if options.Bell then self:_bell(row, -28) end
-	local box = new("TextButton", {
-		AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, 0, 0.5, 0),
-		Size = UDim2.fromOffset(20, 20),
-		BackgroundColor3 = state and Theme.Accent or Theme.Field, AutoButtonColor = false,
-		Font = Enum.Font.GothamBold, Text = state and Glyphs.Check or "", TextSize = 12,
-		TextColor3 = Theme.KnobOn, BorderSizePixel = 0, Parent = row,
-	})
-	corner(6, box)
-	stroke(Theme.Stroke, box)
-	local function render()
-		box.Text = state and Glyphs.Check or ""
-		tween(box, { BackgroundColor3 = state and Theme.Accent or Theme.Field })
-	end
-	box.MouseButton1Click:Connect(function()
-		state = not state
-		render()
-		if options.Callback then task.spawn(options.Callback, state) end
-	end)
-	local api = {}
-	function api:Set(v) state = v and true or false render() end
-	function api:Get() return state end
-	self:_track({ Frame = row, Name = options.Name or "Checkbox", Api = api })
-	return api
-end
-function Section:Slider(options)
-	options = options or {}
-	local min, max = options.Min or 0, options.Max or 100
-	local value = math.clamp(options.Default or min, min, max)
-	local decimals = options.Decimals or 0
-	local row = self:_row(40)
-	new("TextLabel", {
-		Size = UDim2.new(1, -70, 0, 16), BackgroundTransparency = 1,
-		Font = Enum.Font.GothamMedium, Text = options.Name or "Slider", TextSize = 12,
-		TextColor3 = Theme.Text, TextXAlignment = Enum.TextXAlignment.Left, Parent = row,
-	})
-	local readout = new("TextLabel", {
-		AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, 0, 0, 0),
-		Size = UDim2.fromOffset(70, 16), BackgroundTransparency = 1,
-		Font = Enum.Font.GothamBold, Text = "", TextSize = 12, TextColor3 = Theme.SubText,
-		TextXAlignment = Enum.TextXAlignment.Right, Parent = row,
-	})
-	local bar = new("TextButton", {
-		Position = UDim2.new(0, 0, 0, 26), Size = UDim2.new(1, 0, 0, 4),
-		BackgroundColor3 = Theme.TrackOff, AutoButtonColor = false, Text = "",
-		BorderSizePixel = 0, Parent = row,
-	})
-	corner(2, bar)
-	local fill = new("Frame", {
-		Size = UDim2.fromScale(0, 1), BackgroundColor3 = Theme.Accent,
-		BorderSizePixel = 0, Parent = bar,
-	})
-	corner(2, fill)
-	local knob = new("Frame", {
-		AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0, 0, 0.5, 0),
-		Size = UDim2.fromOffset(11, 11), BackgroundColor3 = Theme.Accent,
-		BorderSizePixel = 0, Parent = bar,
-	})
-	corner(6, knob)
-	local function round(n)
-		local mult = 10 ^ decimals
-		return math.floor(n * mult + 0.5) / mult
-	end
-	local function render(fire)
-		local alpha = (max - min) == 0 and 0 or (value - min) / (max - min)
-		fill.Size = UDim2.fromScale(alpha, 1)
-		knob.Position = UDim2.new(alpha, 0, 0.5, 0)
-		readout.Text = tostring(round(value)) .. (options.Suffix or "")
-		if fire and options.Callback then task.spawn(options.Callback, round(value)) end
-	end
-	local dragging = false
-	local function fromMouse()
-		if bar.AbsoluteSize.X <= 0 then return end
-		local rel = (UserInputService:GetMouseLocation().X - bar.AbsolutePosition.X) / bar.AbsoluteSize.X
-		value = min + math.clamp(rel, 0, 1) * (max - min)
-		render(true)
-	end
-	bar.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1
-			or input.UserInputType == Enum.UserInputType.Touch then
-			dragging = true fromMouse()
-		end
-	end)
-	UserInputService.InputEnded:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1
-			or input.UserInputType == Enum.UserInputType.Touch then dragging = false end
-	end)
-	RunService.RenderStepped:Connect(function()
-		if not souAtual() then return end
-		if dragging then fromMouse() end
-	end)
-	render(false)
-	local api = {}
-	function api:Set(v) value = math.clamp(v, min, max) render(true) end
-	function api:Get() return round(value) end
-	self:_track({ Frame = row, Name = options.Name or "Slider", Api = api })
-	return api
-end
-function Section:Dropdown(options)
-	options = options or {}
-	local items = options.Items or {}
-	local selected = options.Default or items[1] or "None"
-	local open = false
-	local holder = new("Frame", {
-		Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
-		BackgroundTransparency = 1, Parent = self.Frame,
-	})
-	list(holder, 6)
-	new("TextLabel", {
-		Size = UDim2.new(1, 0, 0, 16), BackgroundTransparency = 1,
-		Font = Enum.Font.GothamMedium, Text = options.Name or "Dropdown", TextSize = 12,
-		TextColor3 = Theme.Text, TextXAlignment = Enum.TextXAlignment.Left, Parent = holder,
-	})
-	local field = new("TextButton", {
-		Size = UDim2.new(1, 0, 0, 32), BackgroundColor3 = Theme.Field,
-		AutoButtonColor = false, Text = "", BorderSizePixel = 0, Parent = holder,
-	})
-	corner(9, field)
-	stroke(Theme.Stroke, field)
-	local valueLabel = new("TextLabel", {
-		Position = UDim2.fromOffset(12, 0), Size = UDim2.new(1, -40, 1, 0),
-		BackgroundTransparency = 1, Font = Enum.Font.GothamMedium, Text = selected,
-		TextSize = 12, TextColor3 = Theme.Text,
-		TextXAlignment = Enum.TextXAlignment.Left, Parent = field,
-	})
-	local arrow = new("TextLabel", {
-		AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -12, 0.5, 0),
-		Size = UDim2.fromOffset(16, 16), BackgroundTransparency = 1,
-		Font = Enum.Font.GothamMedium, Text = Glyphs.Sort, TextSize = 13,
-		TextColor3 = Theme.SubText, Parent = field,
-	})
-	local menu = new("Frame", {
-		Size = UDim2.new(1, 0, 0, 0), BackgroundColor3 = Theme.Field,
-		BorderSizePixel = 0, ClipsDescendants = true, Parent = holder,
-	})
-	corner(9, menu)
-	local menuList = list(menu, 0)
-	pad(menu, 4, 4, 4, 4)
-	local function choose(item)
-		selected = item
-		valueLabel.Text = item
-		if options.Callback then task.spawn(options.Callback, item) end
-	end
-	local function criarEntrada(item)
-		local entry = new("TextButton", {
-			Size = UDim2.new(1, 0, 0, 26), BackgroundColor3 = Theme.Hover,
-			BackgroundTransparency = 1, AutoButtonColor = false,
-			Font = Enum.Font.GothamMedium, Text = item, TextSize = 12,
-			TextColor3 = Theme.SubText, TextXAlignment = Enum.TextXAlignment.Left,
-			Parent = menu,
-		})
-		corner(6, entry)
-		pad(entry, 0, 8, 0, 8)
-		entry.MouseEnter:Connect(function()
-			tween(entry, { BackgroundTransparency = 0, TextColor3 = Theme.Text })
-		end)
-		entry.MouseLeave:Connect(function()
-			tween(entry, { BackgroundTransparency = 1, TextColor3 = Theme.SubText })
-		end)
-		entry.MouseButton1Click:Connect(function()
-			choose(item)
-			open = false
-			tween(menu, { Size = UDim2.new(1, 0, 0, 0) }, SMOOTH)
-			tween(arrow, { Rotation = 0 })
-		end)
-	end
-	for _, item in ipairs(items) do criarEntrada(item) end
-	field.MouseButton1Click:Connect(function()
-		open = not open
-		local height = open and (menuList.AbsoluteContentSize.Y + 8) or 0
-		tween(menu, { Size = UDim2.new(1, 0, 0, height) }, SMOOTH)
-		tween(arrow, { Rotation = open and 180 or 0 })
-	end)
-	local api = {}
-	function api:Get() return selected end
-	function api:Set(item) choose(item) end
-	-- troca a lista sem refazer o componente. Serve pra lista que so
-	-- existe depois que o jogo carrega (NPC que entra e sai por
-	-- streaming, por exemplo).
-	function api:SetItems(novos, manterEscolha)
-		items = novos or {}
-		for _, c in ipairs(menu:GetChildren()) do
-			if c:IsA("TextButton") then c:Destroy() end
-		end
-		for _, item in ipairs(items) do criarEntrada(item) end
-		local aindaTem = false
-		for _, item in ipairs(items) do if item == selected then aindaTem = true break end end
-		if not (manterEscolha and aindaTem) then
-			selected = (aindaTem and selected) or items[1] or "None"
-			valueLabel.Text = selected
-		end
-		if open then
-			task.defer(function()
-				tween(menu, { Size = UDim2.new(1, 0, 0, menuList.AbsoluteContentSize.Y + 8) }, SMOOTH)
-			end)
-		end
-	end
-	function api:Items() return items end
-	self:_track({ Frame = holder, Name = options.Name or "Dropdown", Api = api })
-	return api
-end
-function Section:Button(options)
-	options = options or {}
-	local row = self:_row(32)
-	local button = new("TextButton", {
-		Size = UDim2.fromScale(1, 1), BackgroundColor3 = Theme.Field,
-		AutoButtonColor = false, BorderSizePixel = 0, Font = Enum.Font.GothamMedium,
-		Text = options.Name or "Run", TextSize = 12, TextColor3 = Theme.Text, Parent = row,
-	})
-	corner(9, button)
-	stroke(Theme.Stroke, button)
-	button.MouseEnter:Connect(function() tween(button, { BackgroundColor3 = Theme.Hover }) end)
-	button.MouseLeave:Connect(function() tween(button, { BackgroundColor3 = Theme.Field }) end)
-	button.MouseButton1Click:Connect(function()
-		if options.Callback then task.spawn(options.Callback) end
-	end)
-	self:_track({ Frame = row, Name = options.Name or "Button" })
-	return button
-end
-function Section:Label(text)
-	local row = self:_row(18)
-	local label = new("TextLabel", {
-		AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.new(0, 0, 1, 0), AutomaticSize = Enum.AutomaticSize.X,
-		BackgroundTransparency = 1, Font = Enum.Font.GothamMedium, Text = text,
-		TextSize = 11, TextColor3 = Theme.SubText, Parent = row,
-	})
-	pad(label, 0, 10, 0, 10)
-	local function side(anchorX, posX)
-		new("Frame", {
-			AnchorPoint = Vector2.new(anchorX, 0.5), Position = UDim2.new(posX, 0, 0.5, 0),
-			Size = UDim2.new(0.5, -46, 0, 1), BackgroundColor3 = Theme.Line,
-			BorderSizePixel = 0, Parent = row,
-		})
-	end
-	side(0, 0)
-	side(1, 1)
-	self:_track({ Frame = row, Name = "" })
-	return row
-end
-function Section:Divider()
-	local row = self:_row(9)
-	new("Frame", {
-		AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 0, 0.5, 0),
-		Size = UDim2.new(1, 0, 0, 1), BackgroundColor3 = Theme.Line,
-		BorderSizePixel = 0, Parent = row,
-	})
-	self:_track({ Frame = row, Name = "" })
-	return row
-end
-function Section:Input(options)
-	options = options or {}
-	local holder = new("Frame", {
-		Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
-		BackgroundTransparency = 1, Parent = self.Frame,
-	})
-	list(holder, 6)
-	if options.Name then
-		new("TextLabel", {
-			Size = UDim2.new(1, 0, 0, 16), BackgroundTransparency = 1,
-			Font = Enum.Font.GothamMedium, Text = options.Name, TextSize = 12,
-			TextColor3 = Theme.Text, TextXAlignment = Enum.TextXAlignment.Left, Parent = holder,
-		})
-	end
-	local box = new("TextBox", {
-		Size = UDim2.new(1, 0, 0, 30), BackgroundColor3 = Theme.Field, BorderSizePixel = 0,
-		Text = options.Default or "", PlaceholderText = options.Placeholder or "",
-		PlaceholderColor3 = Theme.Dim, ClearTextOnFocus = false, Font = Enum.Font.Gotham,
-		TextSize = 12, TextColor3 = Theme.Text,
-		TextXAlignment = Enum.TextXAlignment.Left, Parent = holder,
-	})
-	corner(9, box)
-	local st = stroke(Theme.Stroke, box)
-	pad(box, 0, 10, 0, 10)
-	box.Focused:Connect(function() tween(st, { Color = Theme.Accent }) end)
-	box.FocusLost:Connect(function(enter)
-		tween(st, { Color = Theme.Stroke })
-		if enter and options.Callback then task.spawn(options.Callback, box.Text) end
-	end)
-	self:_track({ Frame = holder, Name = options.Name or "Input" })
-	return box
-end
-function Section:Info(text, height)
-	local row = self:_row(height or 74)
-	local card = new("Frame", {
-		Size = UDim2.fromScale(1, 1), BackgroundColor3 = Theme.Field,
-		BackgroundTransparency = 0.15, BorderSizePixel = 0, Parent = row,
-	})
-	corner(9, card)
-	stroke(Theme.Stroke, card, 1, 0.4)
-	local lbl = new("TextLabel", {
-		Size = UDim2.new(1, -20, 1, -12), Position = UDim2.fromOffset(10, 6),
-		BackgroundTransparency = 1, Font = Enum.Font.Gotham, Text = text, TextSize = 11,
-		TextColor3 = Theme.SubText, TextXAlignment = Enum.TextXAlignment.Left,
-		TextYAlignment = Enum.TextYAlignment.Top, TextWrapped = true, RichText = true, Parent = card,
-	})
-	self:_track({ Frame = row, Name = "" })
-	return { frame = card, label = lbl, set = function(t) lbl.Text = t end }
-end
-function Section:Status()
-	local row = self:_row(46)
-	local label = new("TextLabel", {
-		Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(13, 13, 13),
-		BorderSizePixel = 0, Font = Enum.Font.Gotham, Text = "—", TextSize = 11,
-		TextColor3 = Theme.SubText, TextWrapped = true, Parent = row,
-	})
-	corner(8, label)
-	pad(label, 6, 8, 6, 8)
-	self:_track({ Frame = row, Name = "" })
-	return label
-end
---==================================================================
---                            A JANELA
---==================================================================
-local win = Zero.new({ Title = "0x5A46 · Flight World" })
-print("[0x5A46] janela criada")
---==================================================================
---                      IMAGEM DE FUNDO
---==================================================================
-local statusImg
-local caixaFundo
-local function hashStr(s)
-    local h = 5381
-    for i = 1, #s do
-        h = (h * 33 + string.byte(s, i)) % 4294967296
-    end
-    return string.format("%x", h)
-end
-local function nomeArquivoFundo(url, ext)
-    local id = hashStr(url) .. "_" .. tostring(BG.salt or 0)
-    if makefolder and isfolder then
-        pcall(function()
-            if not isfolder(BG_PASTA) then makefolder(BG_PASTA) end
-        end)
-        return BG_PASTA .. "/fundo_" .. id .. "." .. ext
-    end
-    return "painel_0x5A46_fundo_" .. id .. "." .. ext
-end
-local function salvarFundo()
-    if not writefile then return end
-    pcall(function()
-        writefile(BG_ARQUIVO, HttpService:JSONEncode(BG))
-    end)
-end
-local function httpFetch(url)
-    local tentativas = {
-        function() return game:HttpGet(url) end,
-        function() return game:HttpGetAsync(url) end,
-        function()
-            local req = (syn and syn.request) or (http and http.request) or http_request or request
-            if req then
-                local r = req({ Url = url, Method = "GET" })
-                return r and (r.Body or r.body)
-            end
-        end,
-    }
-    for _, fn in ipairs(tentativas) do
-        local ok, res = pcall(fn)
-        if ok and type(res) == "string" and #res > 0 then return res end
-    end
-    return nil
-end
-local function pareceImagemDireta(u)
-    u = string.lower(u)
-    return (string.find(u, "%.png") or string.find(u, "%.jpe?g") or string.find(u, "%.webp")) ~= nil
-end
-local function acharImagemNoHtml(html)
-    if type(html) ~= "string" then return nil end
-    local pin = string.match(html, 'https://i%.pinimg%.com/[%w%p]-%.jpg')
-             or string.match(html, 'https://i%.pinimg%.com/[%w%p]-%.png')
-    if pin then return pin end
-    local og = string.match(html, 'og:image"%s*content="([^"]+)"')
-            or string.match(html, 'content="([^"]+)"%s*property="og:image"')
-    if og then return (string.gsub(og, "&amp;", "&")) end
-    return string.match(html, 'https://[%w%p]-%.jpg') or string.match(html, 'https://[%w%p]-%.png')
-end
--- Resolve "ID / link / arquivo" numa imagem que da pra usar em
--- qualquer ImageLabel. Ficou separado pra o medidor de fps poder ter
--- fundo proprio sem eu duplicar tudo isso.
--- Devolve: conteudo, arquivoSalvo, erro
-local function resolverFonteImagem(entrada, salt, diz)
-    entrada = string.gsub(string.gsub(tostring(entrada or ""), "^%s+", ""), "%s+$", "")
-    if entrada == "" then return nil, nil, nil end
-
-    if tonumber(entrada) then
-        return "rbxassetid://" .. entrada, "", nil
-    end
-    if string.sub(entrada, 1, 13) == "rbxassetid://" then
-        return entrada, "", nil
-    end
-    if string.sub(entrada, 1, 4) == "http" then
-        if not (writefile and getcustomasset) then
-            return nil, nil, "Seu executor nao tem writefile/getcustomasset."
-        end
-        local url = entrada
-        if not pareceImagemDireta(url) then
-            if diz then diz("Procurando a imagem na pagina...") end
-            local pagina = httpFetch(url)
-            local achou = pagina and acharImagemNoHtml(pagina)
-            if not achou then
-                return nil, nil, "Nao achei a imagem nessa pagina."
-            end
-            url = achou
-        end
-        local ext = string.find(string.lower(url), "%.jpe?g") and "jpg" or "png"
-        local id = hashStr(url) .. "_" .. tostring(salt or 0)
-        local arq
-        if makefolder and isfolder then
-            pcall(function() if not isfolder(BG_PASTA) then makefolder(BG_PASTA) end end)
-            arq = BG_PASTA .. "/img_" .. id .. "." .. ext
-        else
-            arq = "painel_0x5A46_" .. id .. "." .. ext
-        end
-        local jaTem = false
-        pcall(function() jaTem = isfile and isfile(arq) end)
-        if not jaTem then
-            if diz then diz("Baixando...") end
-            local dados = httpFetch(url)
-            if not dados then return nil, nil, "Falha ao baixar." end
-            if not pcall(function() writefile(arq, dados) end) then
-                return nil, nil, "Falha ao salvar."
+local function debase64(txt)
+    local saida, n = {}, 0
+    local acc, bits = 0, 0
+    for i = 1, #txt do
+        local c = txt:sub(i, i)
+        local v = ORD[c]
+        if v then
+            acc = acc * 64 + v
+            bits = bits + 6
+            if bits >= 8 then
+                bits = bits - 8
+                local by = math.floor(acc / (2 ^ bits))
+                acc = acc - by * (2 ^ bits)
+                n = n + 1
+                saida[n] = string.char(by)
             end
         end
-        local conteudo
-        if not pcall(function() conteudo = getcustomasset(arq) end) or not conteudo then
-            return nil, nil, "Falha ao ler a imagem salva."
-        end
-        return conteudo, arq, nil
     end
-    -- nome de arquivo na pasta do executor
-    if not getcustomasset then return nil, nil, "Seu executor nao tem getcustomasset." end
-    local conteudo
-    if not pcall(function() conteudo = getcustomasset(entrada) end) or not conteudo then
-        return nil, nil, "Arquivo nao achado na pasta do executor."
-    end
-    return conteudo, entrada, nil
+    return table.concat(saida)
 end
 
-local function definirFundo(entrada, silencioso)
-    entrada = string.gsub(string.gsub(tostring(entrada or ""), "^%s+", ""), "%s+$", "")
-    BG.imagem = entrada
-    local function diz(t) if statusImg then statusImg.set(t) end end
-    if caixaFundo and caixaFundo.Text ~= entrada and not caixaFundo:IsFocused() then
-        caixaFundo.Text = entrada
-    end
-    if entrada == "" then
-        win.BgImage.Image = ""
-        win.BgImage.Visible = false
-        BG.arquivo = ""
-        if win.SyncMini then pcall(function() win:SyncMini() end) end
-        diz("Sem imagem.")
-        salvarFundo()
-        return
-    end
-    if tonumber(entrada) then
-        BG.arquivo = ""
-        win.BgImage.Image = "rbxassetid://" .. entrada
-        win.BgImage.ImageTransparency = BG.transparencia
-        win.BgImage.Visible = true
-        if win.SyncMini then pcall(function() win:SyncMini() end) end
-        diz("Carregando ID " .. entrada .. "...")
-        task.delay(1.2, function()
-            if win.BgImage.Visible and not win.BgImage.IsLoaded then
-                win.BgImage.Image = "rbxthumb://type=Asset&id=" .. entrada .. "&w=420&h=420"
-                diz("Aplicado via thumb (ID " .. entrada .. ")")
+local function descomprimir(bin)
+    local saida, n = {}, 0     -- pedacos ja produzidos
+    local pronto = {}          -- saida como bytes, pra copiar de tras
+    local m = 0
+    local i, tam = 1, #bin
+    local byte, char = string.byte, string.char
+    while i <= tam do
+        local flags = byte(bin, i)
+        i = i + 1
+        for bit = 0, 7 do
+            if i > tam then break end
+            if flags % (2 ^ (bit + 1)) >= 2 ^ bit then
+                local o1, o2, c = byte(bin, i, i + 2)
+                i = i + 3
+                local off = o1 * 256 + o2
+                local comp = c + 3
+                local inicio = m - off + 1
+                for k = 0, comp - 1 do
+                    m = m + 1
+                    pronto[m] = pronto[inicio + k]
+                end
             else
-                diz("Imagem aplicada (ID " .. entrada .. ")")
-            end
-        end)
-        salvarFundo()
-        if not silencioso then
-            win:Notify({ Title = "Background", Text = "image changed", Duration = 3 })
-        end
-        return
-    end
-    local conteudo
-    if string.sub(entrada, 1, 13) == "rbxassetid://" then
-        BG.arquivo = ""
-        conteudo = entrada
-    elseif string.sub(entrada, 1, 4) == "http" then
-        if not (writefile and getcustomasset) then
-            diz("Seu executor nao tem writefile/getcustomasset.\nUse um ID do Roblox.")
-            return
-        end
-        local url = entrada
-        if not pareceImagemDireta(url) then
-            diz("Procurando a imagem na pagina...")
-            local pagina = httpFetch(url)
-            local achou = pagina and acharImagemNoHtml(pagina)
-            if achou then
-                url = achou
-            else
-                diz("Nao achei a imagem nessa pagina.\nUse o link direto (.jpg / .png).")
-                return
+                m = m + 1
+                pronto[m] = byte(bin, i)
+                i = i + 1
             end
         end
-        local ext = string.find(string.lower(url), "%.jpe?g") and "jpg" or "png"
-        local arq = nomeArquivoFundo(url, ext)
-        local jaTem = false
-        pcall(function() jaTem = isfile and isfile(arq) end)
-        if not jaTem then
-            diz("Baixando...")
-            local dados = httpFetch(url)
-            if not dados then diz("Falha ao baixar. Tente um ID do Roblox.") return end
-            local ok = pcall(function() writefile(arq, dados) end)
-            if not ok then diz("Falha ao salvar a imagem.") return end
-        end
-        local ok2 = pcall(function() conteudo = getcustomasset(arq) end)
-        if not ok2 or not conteudo then diz("Falha ao ler a imagem salva.") return end
-        BG.arquivo = arq
-    else
-        if not getcustomasset then diz("Seu executor nao tem getcustomasset.") return end
-        local ok = pcall(function() conteudo = getcustomasset(entrada) end)
-        if not ok or not conteudo then diz("Arquivo nao achado na pasta do executor.") return end
-        BG.arquivo = entrada
     end
-    if conteudo then
-        win.BgImage.Image = conteudo
-        win.BgImage.ImageTransparency = BG.transparencia
-        win.BgImage.Visible = true
-        if win.SyncMini then pcall(function() win:SyncMini() end) end
-        diz("Imagem aplicada. Pra trocar, cole outra e clique Aplicar.")
-        salvarFundo()
-        if not silencioso then
-            win:Notify({ Title = "Background", Text = "image changed", Duration = 3 })
+    -- junta em blocos, senao concat de 200 mil pedacos fica pesado
+    local partes, p = {}, 0
+    local bloco, b = {}, 0
+    for k = 1, m do
+        b = b + 1
+        bloco[b] = char(pronto[k])
+        if b == 4096 then
+            p = p + 1
+            partes[p] = table.concat(bloco)
+            bloco, b = {}, 0
         end
-    else
-        diz("Nao foi possivel aplicar.")
     end
-end
-local function carregarFundo()
-    if not (readfile and isfile) then return end
-    local bruto
-    local ok = pcall(function() if isfile(BG_ARQUIVO) then bruto = readfile(BG_ARQUIVO) end end)
-    if not ok or not bruto or bruto == "" then return end
-    local dados
-    if not pcall(function() dados = HttpService:JSONDecode(bruto) end) then return end
-    if type(dados) ~= "table" then return end
-    if type(dados.transparencia) == "number" then BG.transparencia = dados.transparencia end
-    if type(dados.salt) == "number" then BG.salt = dados.salt end
-    if type(dados.arquivo) == "string" then BG.arquivo = dados.arquivo end
-    if type(dados.imagem) == "string" and dados.imagem ~= "" then
-        BG.imagem = dados.imagem
-        task.spawn(function()
-            task.wait(0.5)
-            if caixaFundo then caixaFundo.Text = BG.imagem end
-            local pronto = false
-            if BG.arquivo ~= "" and isfile and getcustomasset then
-                pcall(function()
-                    if isfile(BG.arquivo) then
-                        local conteudo = getcustomasset(BG.arquivo)
-                        if conteudo then
-                            win.BgImage.Image = conteudo
-                            win.BgImage.ImageTransparency = BG.transparencia
-                            win.BgImage.Visible = true
-                            if win.SyncMini then pcall(function() win:SyncMini() end) end
-                            if statusImg then statusImg.set("Imagem de sempre carregada do disco.") end
-                            pronto = true
-                        end
-                    end
-                end)
-            end
-            if not pronto then pcall(definirFundo, BG.imagem, true) end
-        end)
+    if b > 0 then
+        p = p + 1
+        partes[p] = table.concat(bloco, "", 1, b)
     end
-end
----------------------------------------------------------------- CUSTOMIZE
-win:Group("Painel", 99)
-local abaCustom = win:Tab("Customize", "sparkle")
--- Config e Customize sempre por ULTIMO na barra lateral: as abas do
--- jogo (criadas depois) ficam em cima, com LayoutOrder 0.
-abaCustom.Button.LayoutOrder = 100
-do
-    local img = abaCustom:Section("Background image", "Roblox ID, link or file", 1)
-    local caixa = img:Input({ Name = "Source", Placeholder = "1234567890  /  link.png  /  photo.png",
-        Default = BG.imagem, Callback = function(t) definirFundo(t) end })
-    caixaFundo = caixa
-    img:Button({ Name = "Apply", Callback = function() definirFundo(caixa.Text) end })
-    img:Button({ Name = "Remove", Callback = function()
-        caixa.Text = ""
-        definirFundo("")
-    end })
-    img:Button({ Name = "Reload (if the link changed)", Callback = function()
-        if BG.imagem == "" then
-            win:Notify({ Title = "Background", Text = "no image to reload", Duration = 3 })
-            return
-        end
-        BG.salt = (BG.salt or 0) + 1
-        definirFundo(BG.imagem)
-    end })
-    img:Slider({ Name = "Image transparency", Min = 0, Max = 100,
-        Default = math.floor(BG.transparencia * 100), Suffix = "%",
-        Callback = function(v)
-            BG.transparencia = v / 100
-            win.BgImage.ImageTransparency = BG.transparencia
-            salvarFundo()
-        end })
-    local j = abaCustom:Section("Window", nil, 2)
-    j:Slider({ Name = "Panel transparency", Min = 0, Max = 90, Default = 0, Suffix = "%",
-        Callback = function(v) win.Main.BackgroundTransparency = v / 100 end })
-    -- so linha de status (erro / confirmacao), sem texto explicativo
-    statusImg = abaCustom:Section("Status", nil, 2):Info("—", 40)
-    carregarFundo()
-end
---==================================================================
---                    MEDIDOR DE FPS E PING
---==================================================================
--- Painelzinho solto, arrastavel, com fundo proprio. Nao usa nada da
--- imagem do painel grande: guarda no arquivo dele mesmo.
--- transp    = transparencia da PROPRIA imagem (0 = imagem cheia)
--- escurecer = o quanto do cartao preto fica atras dela (0 = nada,
---             so a imagem; suba se o texto sumir em cima de foto clara)
-local MED = { ligado = false, imagem = "", arquivo = "", salt = 0,
-              transp = 0, escurecer = 0, escala = 1, x = 20, y = 90,
-              versao = 2 }
-local MED_ARQUIVO = "painel_0x5A46_medidor.json"
-local statusMed
-
-local function salvarMed()
-    if not writefile then return end
-    pcall(function() writefile(MED_ARQUIVO, HttpService:JSONEncode(MED)) end)
+    return table.concat(partes, "", 1, p)
 end
 
-local velhaMed = RAIZ:FindFirstChild("Medidor_0x5A46")
-if velhaMed then pcall(function() velhaMed:Destroy() end) end
-
-local telaMed = new("ScreenGui", {
-    Name = "Medidor_0x5A46", ResetOnSpawn = false, IgnoreGuiInset = true,
-    DisplayOrder = 998, Enabled = false, Parent = RAIZ,
+local PAYLOAD = table.concat({
+"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"
 })
-local caixaMed = new("Frame", {
-    Position = UDim2.fromOffset(MED.x, MED.y), Size = UDim2.fromOffset(132, 52),
-    BackgroundColor3 = Theme.Card, BackgroundTransparency = 0.1,
-    BorderSizePixel = 0, ClipsDescendants = true, Parent = telaMed,
-})
-corner(10, caixaMed)
-stroke(Theme.Stroke, caixaMed, 1, 0.3)
-local fundoMed = new("ImageLabel", {
-    Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, BorderSizePixel = 0,
-    Image = "", ImageTransparency = MED.transp,
-    ScaleType = Enum.ScaleType.Crop, Visible = false, ZIndex = 0, Parent = caixaMed,
-})
-corner(10, fundoMed)
-local textoFps = new("TextLabel", {
-    Position = UDim2.fromOffset(10, 6), Size = UDim2.new(1, -20, 0, 20),
-    BackgroundTransparency = 1, Font = Enum.Font.GothamBold, Text = "-- FPS",
-    TextSize = 15, TextColor3 = Theme.Text, TextXAlignment = Enum.TextXAlignment.Left,
-    TextStrokeTransparency = 0.6, ZIndex = 2, Parent = caixaMed,
-})
-local textoPing = new("TextLabel", {
-    Position = UDim2.fromOffset(10, 26), Size = UDim2.new(1, -20, 0, 18),
-    BackgroundTransparency = 1, Font = Enum.Font.GothamMedium, Text = "-- ms",
-    TextSize = 12, TextColor3 = Theme.SubText, TextXAlignment = Enum.TextXAlignment.Left,
-    TextStrokeTransparency = 0.7, ZIndex = 2, Parent = caixaMed,
-})
+local TAM_ESPERADO = 128870
+local SOMA_ESPERADA = 1562851480
 
--- Sem imagem o cartao e o fundo. COM imagem ele sai da frente:
--- fica so o quanto de escuro voce pedir no slider "Escurecer".
-local function ajustarCartaoMed()
-    if fundoMed.Visible then
-        caixaMed.BackgroundTransparency = 1 - MED.escurecer
-        textoFps.TextStrokeTransparency  = 0.25
-        textoPing.TextStrokeTransparency = 0.35
-    else
-        caixaMed.BackgroundTransparency = 0.1
-        textoFps.TextStrokeTransparency  = 0.6
-        textoPing.TextStrokeTransparency = 0.7
-    end
+local ok, FONTE = pcall(function() return descomprimir(debase64(PAYLOAD)) end)
+if not ok then
+    warn("[0x5A46] falhou ao descomprimir: " .. tostring(FONTE))
+    warn("[0x5A46] provavel: o texto foi cortado ao colar. Veja o tamanho do arquivo.")
+    return
 end
 
--- arrastar
-do
-    local arrastando, inicioPos, inicioMouse = false, nil, nil
-    caixaMed.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-            or input.UserInputType == Enum.UserInputType.Touch then
-            arrastando, inicioPos, inicioMouse = true, caixaMed.Position, input.Position
-            input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then
-                    arrastando = false
-                    MED.x, MED.y = caixaMed.Position.X.Offset, caixaMed.Position.Y.Offset
-                    salvarMed()
-                end
-            end)
-        end
-    end)
-    UserInputService.InputChanged:Connect(function(input)
-        if not arrastando or not souAtual() then return end
-        if input.UserInputType == Enum.UserInputType.MouseMovement
-            or input.UserInputType == Enum.UserInputType.Touch then
-            local d = input.Position - inicioMouse
-            caixaMed.Position = UDim2.fromOffset(inicioPos.X.Offset + d.X,
-                                                 inicioPos.Y.Offset + d.Y)
-        end
-    end)
+-- Confere a si mesmo. Se o campo de colar cortou ou mexeu em algum byte,
+-- eu digo isso na cara em vez de dar um erro estranho la na frente.
+if #FONTE ~= TAM_ESPERADO then
+    warn(string.format("[0x5A46] veio %d bytes, esperava %d — o texto foi CORTADO ao colar.",
+        #FONTE, TAM_ESPERADO))
+    return
+end
+local soma = 0
+for i = 1, #FONTE do soma = (soma * 31 + string.byte(FONTE, i)) % 4294967296 end
+if soma ~= SOMA_ESPERADA then
+    warn("[0x5A46] o conteudo chegou corrompido (checksum nao bate).")
+    return
 end
 
-local function definirFundoMedidor(entrada, silencioso)
-    entrada = tostring(entrada or "")
-    MED.imagem = entrada
-    local function diz(t) if statusMed then statusMed.set(t) end end
-    if entrada == "" then
-        fundoMed.Image = "" fundoMed.Visible = false
-        MED.arquivo = ""
-        ajustarCartaoMed()
-        diz("Sem imagem.")
-        salvarMed()
-        return
-    end
-    local conteudo, arq, erro = resolverFonteImagem(entrada, MED.salt, diz)
-    if erro or not conteudo then
-        diz(erro or "Nao foi possivel aplicar.")
-        return
-    end
-    MED.arquivo = arq or ""
-    fundoMed.Image = conteudo
-    fundoMed.ImageTransparency = MED.transp
-    fundoMed.Visible = true
-    ajustarCartaoMed()
-    diz("Imagem aplicada no medidor.")
-    salvarMed()
-    if not silencioso then
-        win:Notify({ Title = "Medidor", Text = "fundo trocado", Duration = 3 })
-    end
+local compilar = loadstring or load
+local f, err = compilar(FONTE)
+if not f then
+    warn("[0x5A46] o painel nao compilou depois de descomprimir: " .. tostring(err))
+    return
 end
-
--- fps por media movel, ping do Stats
-local Stats = game:GetService("Stats")
-local fpsMed = 60
-RunService.RenderStepped:Connect(function(dt)
-    if not souAtual() then return end
-    if dt > 0 then fpsMed = fpsMed * 0.9 + (1 / dt) * 0.1 end
-end)
-
-task.spawn(function()
-    while souAtual() do
-        task.wait(0.25)
-        if telaMed.Enabled then
-            local ping = LocalPlayer:GetAttribute("Ping")
-            if type(ping) ~= "number" or ping <= 0 then
-                local ok, ms = pcall(function()
-                    return Stats.Network.ServerStatsItem["Data Ping"]:GetValue()
-                end)
-                ping = (ok and ms) or 0
-            end
-            local f = math.floor(fpsMed)
-            textoFps.Text = f .. " FPS"
-            textoFps.TextColor3 = (f >= 50 and Color3.fromRGB(235,235,235))
-                or (f >= 30 and Color3.fromRGB(210,190,120))
-                or Color3.fromRGB(220,120,120)
-            textoPing.Text = math.floor(ping) .. " ms"
-            textoPing.TextColor3 = (ping <= 90 and Theme.SubText)
-                or (ping <= 180 and Color3.fromRGB(210,190,120))
-                or Color3.fromRGB(220,120,120)
-        end
-    end
-end)
-
-pcall(function()
-    if readfile and isfile and isfile(MED_ARQUIVO) then
-        local d = HttpService:JSONDecode(readfile(MED_ARQUIVO))
-        if type(d) == "table" then
-            for k, v in pairs(d) do
-                if MED[k] ~= nil and type(MED[k]) == type(v) then MED[k] = v end
-            end
-            -- config da v1 vinha com a imagem 35% apagada e o cartao
-            -- preto atras: ficava quase sem dar pra ver a foto.
-            if (d.versao or 1) < 2 then
-                MED.transp, MED.escurecer, MED.versao = 0, 0, 2
-                salvarMed()
-            end
-        end
-    end
-end)
-caixaMed.Position = UDim2.fromOffset(MED.x, MED.y)
-fundoMed.ImageTransparency = MED.transp
-ajustarCartaoMed()
-caixaMed.Size = UDim2.fromOffset(math.floor(132 * MED.escala),
-                                 math.floor(52 * MED.escala))
-telaMed.Enabled = MED.ligado
-if MED.imagem ~= "" then
-    task.spawn(function() task.wait(0.6) pcall(definirFundoMedidor, MED.imagem, true) end)
-end
-
----------------------------------------------------------------- CONFIG
-local abaConfig = win:Tab("Config", "sliders")
-abaConfig.Button.LayoutOrder = 101
-do
-    local c = abaConfig:Section("Panel", nil, 1)
-    c:Button({ Name = "Test notification", Callback = function()
-        win:Notify({ Title = "0x5A46", Text = "working", Duration = 4 })
-    end })
-    c:Divider()
-    c:Button({ Name = "Hide (END)", Callback = function() win.Gui.Enabled = false end })
-    local d = abaConfig:Section("Shortcuts", nil, 1)
-    d:Status().Text = "RightCtrl minimizes (turns into a card: drag to move, click to reopen)\n" ..
-        "END hides the whole panel\n" ..
-        
-        "Key chip: click = bind · right click = clear"
-
-    local ic = abaConfig:Section("Tab icons", "drawn, not text", 1)
-    ic:Info(
-        "<b>" .. table.concat(Icons.names(), " · ") .. "</b>\n\n" ..
-        "They are vector drawings on a 16x16 grid, so they stay sharp at " ..
-        "any size and follow the theme colour.\n\n" ..
-        "Also accepts Portuguese: casa, espada, jogador, olho, pesca, alvo, " ..
-        "moeda, caixa, raio, sol, pino, ponto.\n\n" ..
-        "A name that does not exist falls back to the old text mode — " ..
-        "<b>P.Tab(\"X\", \"◉\")</b> still works.", 132)
-    local m = abaConfig:Section("FPS and ping meter", nil, 2)
-    m:Toggle({ Name = "Show meter", Default = MED.ligado,
-        Callback = function(on)
-            MED.ligado = on
-            telaMed.Enabled = on
-            salvarMed()
-        end })
-    local caixaM = m:Input({ Name = "Fundo do medidor",
-        Placeholder = "ID  /  link.png  /  foto.png", Default = MED.imagem,
-        Callback = function(t) definirFundoMedidor(t) end })
-    m:Button({ Name = "Apply", Callback = function() definirFundoMedidor(caixaM.Text) end })
-    m:Button({ Name = "Remove background", Callback = function()
-        caixaM.Text = "" definirFundoMedidor("")
-    end })
-    m:Slider({ Name = "Fade image", Min = 0, Max = 100,
-        Default = math.floor(MED.transp * 100), Suffix = "%",
-        Callback = function(v)
-            MED.transp = v / 100
-            fundoMed.ImageTransparency = MED.transp
-            salvarMed()
-        end })
-    m:Slider({ Name = "Darken behind", Min = 0, Max = 100,
-        Default = math.floor(MED.escurecer * 100), Suffix = "%",
-        Callback = function(v)
-            MED.escurecer = v / 100
-            ajustarCartaoMed()
-            salvarMed()
-        end })
-    m:Slider({ Name = "Size", Min = 70, Max = 200, Default = math.floor(MED.escala * 100),
-        Suffix = "%",
-        Callback = function(v)
-            MED.escala = v / 100
-            caixaMed.Size = UDim2.fromOffset(math.floor(132 * MED.escala),
-                                             math.floor(52 * MED.escala))
-            textoFps.TextSize = math.floor(15 * MED.escala)
-            textoPing.TextSize = math.floor(12 * MED.escala)
-            salvarMed()
-        end })
-    statusMed = m:Info("—", 40)
-
-    local cre = abaConfig:Section("Credits", nil, 2)
-    cre:Info(
-        "Scripts: <b>Th.exe</b>\n" ..
-        "Panel format: <b>0x5A46</b>", 60)
-end
---==================================================================
--- EXPORT
---==================================================================
-ENV.Painel5A46 = {
-    win     = win,
-    Zero    = Zero,
-    Theme   = Theme,
-    Icons   = Icons,
-    BG      = BG,
-    versao  = MINHA_VERSAO,
-    souAtual = souAtual,
-    RAIZ    = RAIZ,
-    Tab     = function(nome, icone) return win:Tab(nome, icone) end,
-    Group   = function(texto, ordem) return win:Group(texto, ordem) end,
-    iconNames = Icons.names,
-    notify  = function(titulo, texto, seg)
-        win:Notify({ Title = titulo, Text = texto, Duration = seg })
-    end,
-    show    = function() win.Gui.Enabled = true end,
-    hide    = function() win.Gui.Enabled = false end,
-    setFundo = function(src) definirFundo(src) end,
-    new     = new,
-    corner  = corner,
-    stroke  = stroke,
-    pad     = pad,
-    list    = list,
-    tween   = tween,
-}
-win:Notify({ Title = "0x5A46", Text = "panel loaded · v" .. MINHA_VERSAO, Duration = 5 })
-print("[0x5A46] painel pronto · v" .. MINHA_VERSAO)
-
-;(function()
-  local ok, err = pcall(function()
---[[=================================================================
-    AVIAO / JOB  ·  aba do painel 0x5A46
-    Jogo: Flight World / "Mundo de Voo"  (PlaceId 18700851435)
-    -------------------------------------------------------------------
-    TUDO AQUI FOI MEDIDO DENTRO DO JOGO. Nada de chute.
-
-    1) QUEM MANDA NO AVIAO E O CLIENTE.
-       Main.ReceiveAge = 0 -> a fisica e minha. Dei um PivotTo de
-       50.054 studs de uma vez (GIB -> SXM) e segurei 4 s: erro 0.00 e
-       o servidor NAO puxou de volta nenhuma vez. Aqui nao existe o
-       limite de ~250 studs que o outro jogo tinha.
-
-    2) SE SOLTAR, CAI — E DEPOIS SAI ANDANDO SOZINHO.
-       Sem segurar: ~100 studs de queda em 1,5 s. E depois de pousar,
-       medi o aviao escorregando 47 studs em 10 s a 6-11 studs/s sem
-       ninguem tocar. Por isso existe o PARK BRAKE. Sem ele o aviao sai
-       do circulo e a entrega nao fecha.
-
-    3) TELEPORTE FECHA O JOB MAS PAGA $0.
-       Testei: teleportei pro Gate 5 de SXM com a carga a bordo.
-       Apareceu "Dropping Off Cargo 2/5 ... 5/5", o job fechou, e a
-       recompensa veio com
-              Distance Flown: 1.2 m        Value: $0
-       O servidor paga pela distancia PERCORRIDA, nao pela do contrato.
-
-    4) MOVIMENTO CONTINUO CONTA. Medindo "Miles Flown" (1 mi = 2000 studs):
-           200 a 2400 studs/s -> 100%   ($172/s)
-                6000 studs/s  -> 100%   ($232/s)  <- ultimo confirmado
-                8000 studs/s  ->  28%   ($151/s)
-               10000 studs/s  ->   5%   ($0/s)
-       VELOCIDADE ficou FIXA em 7000 porque voce pediu. Fica entre o
-       6000 (100% confirmado) e o 8000 (28%) — nao consegui remedir o
-       7000 porque o jogo fechou. Se o dinheiro vier menos do que devia,
-       troca VELOCIDADE ali embaixo pra 6000.
-
-    5) VOAR JA PAGA SEM JOB NENHUM.
-       72.000 studs em 30 s = +41 milhas e +$5.153 (~$126/milha).
-
-    6) A ALTURA DE POUSO SO VALE COM O AVIAO NIVELADO.
-       Bounding box torto deu 2,61; reto deu 1,95; o certo era 2,04.
-       Por isso a altura e medida depois do trecho de cruzeiro.
-
-    7) O CONTADOR "Loading Cargo 3/5" E ANIMACAO DO CLIENTE.
-       Varri as 20.190 funcoes vivas na memoria atras do texto e achei
-       as duas que escrevem no HUD.JobAction. Constantes delas:
-         "HUD" | "JobAction" | "Picking Up " | "Dropping Off " |
-         "Amount" | "0/" | "CargoUnits" | "Path"
-       e o upvalue que faz o servico:
-         "MoveToFinished" | "Connect" | "MoveTo" | "os" | "clock"
-       Ou seja: e um NPC com Humanoid que ANDA do portao ate o aviao, e
-       cada chegada soma 1. Achei ele: workspace.Camera.NPC, WalkSpeed
-       6.4. O servidor nao manda no ritmo — quem manda e o cliente.
-
-       PRIMEIRA TENTATIVA, ERRADA: subir o WalkSpeed pra 80. PIOROU.
-         padrao  (6.4) : 5 cargas em 10,54 s
-         WalkSpeed 80  : 5 cargas em 19,13 s
-       Em velocidade alta o NPC passa do ponto e fica indo e voltando,
-       entao o MoveToFinished demora MAIS. Boa lição: medir, nao supor.
-
-       O QUE FUNCIONA: teleportar o NPC direto pro Humanoid.WalkToPoint.
-       O MoveToFinished dispara na hora que ele encosta no ponto.
-         5 cargas   : 1,99 s / 2,06 s / 1,00 s   (contra 10,54 s)
-         8 passageiros: 4,05 s
-       E o pagamento nao muda: os jobs fecharam pagando $28.100 e
-       $37.700 normalmente, com "Distance Flown" cheia.
-
-    8) AVIAO "Crashed" TRAVA TODOS OS JOBS.
-       Quando States.Crashed vira true o servidor recusa comecar
-       QUALQUER job, em silencio (testei carga e passageiro, nenhum
-       nasce). Nao e ban. Precisa dar respawn no aviao. O painel avisa
-       na vitrine quando esta assim.
-===================================================================]]
-
-local P = getgenv().Painel5A46
-if not P then return end
-local souAtual = P.souAtual
-local function avisar(t, x, s) P.notify(t, x, s or 3) end
-
-local Players    = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local RS         = game:GetService("ReplicatedStorage")
-local LP = Players.LocalPlayer
-
---==================================================================
---                            CONFIG
---==================================================================
-local VELOCIDADE = 7000   -- FIXA, a pedido. Veja a nota 4 la em cima.
-
-local T = {
-    altura     = 2500,   -- cruzeiro
-    aproxima   = 400,    -- descida vertical sobre o portao
-    toque      = 80,     -- ultimos 20 studs, devagar (senao marca Crashed)
-    assentar   = 3.0,    -- segundos preso antes de considerar "chegou"
-    travarNoGate = true,
-    pernaFarm  = 25,     -- segundos em cada sentido do vai-e-vem
-    rapido     = true,   -- acelera o contador de carga/passageiros
-    folga      = 2.5,    -- quao perto do WalkToPoint ja vale como "chegou"
-}
-
--- MEDIDO no KEF: Gate 40 -> 42 -> 44 ficam a 60 e 59 studs um do outro.
--- No SXM, Gate 5 e Gate 6 ficam a 40 studs. Ou seja, "perto do portao"
--- tem que ser um numero PEQUENO, senao o auto acha que ja chegou quando
--- na verdade esta no portao vizinho — e ai fica preso la parado.
-local PERTO = 20        -- studs
-local ENCAIXADO = 4     -- se o freio esta a mais que isso do alvo, reencaixa
-local PACIENCIA = 35    -- segundos sem nada mudar antes de tentar de novo
-
-local MODOS = { "Fly", "Instant teleport", "Cash farm" }
-local modo    = "Fly"
-
-local viajando  = false
-local cancelar  = false
-local autoOn    = false
-local travado   = nil        -- CFrame onde o aviao esta preso (ou nil)
-local ultimoTxt = "idle"
-
---==================================================================
---                     ACHAR O AVIAO
---==================================================================
-local function meuAviao()
-    local pasta = workspace:FindFirstChild("Aircrafts")
-    if not pasta then return nil end
-    for _, v in ipairs(pasta:GetChildren()) do
-        if v:IsA("Model") and v:GetAttribute("Owner") == LP.Name and v.PrimaryPart then
-            return v
-        end
-    end
-    return nil
-end
-
-local function sentado()
-    local c = LP.Character
-    local h = c and c:FindFirstChildWhichIsA("Humanoid")
-    return h and h.SeatPart or nil
-end
-
-local function quebrado()
-    local av = meuAviao()
-    local est = av and av:FindFirstChild("States")
-    return est and est:GetAttribute("Crashed") or false
-end
-
--- Quanto o Main fica acima da barriga. So confia com o aviao NIVELADO:
--- o bounding box e alinhado ao mundo, entao inclinacao estraga a conta.
-local function alturaNivelada(av)
-    local ok, cf, tam = pcall(function()
-        local a, b = av:GetBoundingBox()
-        return a, b
-    end)
-    if not ok or not cf then return 2 end
-    return (av.PrimaryPart.Position.Y - (cf.Position.Y - tam.Y / 2)) + 0.1
-end
-
---==================================================================
---                    ACHAR O JOB (todos os tipos)
---==================================================================
--- Os dois modulos de cliente que constroem um job. Engancho o .new e o
--- .Update dos dois pra guardar a instancia viva assim que ela nasce.
-local CLASSES = {}
-for _, nome in ipairs({ "CargoAndPassengers", "SupplyDrop" }) do
-    local ok, m = pcall(function()
-        return require(RS.Client.JobsClient[nome])
-    end)
-    if ok and type(m) == "table" then CLASSES[#CLASSES + 1] = m end
-end
-
-local G = getgenv()
-if not G.__5A46_jobHook then
-    G.__5A46_jobHook = true
-    for _, C in ipairs(CLASSES) do
-        local antigoNew, antigoUp = C.new, C.Update
-        if type(antigoNew) == "function" then
-            C.new = function(...)
-                local o = antigoNew(...)
-                G.__5A46_job = o
-                return o
-            end
-        end
-        if type(antigoUp) == "function" then
-            C.Update = function(self, ...)
-                G.__5A46_job = self
-                return antigoUp(self, ...)
-            end
-        end
-    end
-end
-
--- Se o painel entrou depois do job ja existir, o gancho nao pegou.
--- Ai varro a memoria (e caro, so quando precisa).
-local function varrerJob()
-    if not getgc or #CLASSES == 0 then return nil end
-    local ok, lista = pcall(getgc, true)
-    if not ok then return nil end
-    local morto
-    for _, o in ipairs(lista) do
-        if type(o) == "table" then
-            local mt = getmetatable(o)
-            for _, C in ipairs(CLASSES) do
-                -- pode ter job velho na memoria junto com o vivo; prefiro
-                -- o que ainda tem tarefa pra fazer
-                if mt == C then
-                    if o.JobData and o.CurrentTask then return o end
-                    morto = morto or o
-                end
-            end
-        end
-    end
-    return morto
-end
-
--- getgc(true) varre a memoria inteira: e caro demais pra chamar toda hora.
--- Com os ganchos instalados so preciso varrer quando o painel entra com um
--- job ja rodando. Entao: no maximo uma varredura a cada 10 segundos.
-local ultimaVarredura = -999
--- Um job so conta como vivo se der pra saber PRA ONDE ir. Quando o job
--- termina o modulo limpa o CurrentTask mas a tabela continua na memoria;
--- se eu aceitasse ela, o auto ficaria repetindo "job without target" pra
--- sempre e nunca comecaria outro. Foi por isso que ele parava do nada.
-local function jobUtil(j)
-    if not j then return false end
-    if j.Destroyed then return false end
-    local d = j.JobData and j.JobData.Data
-    local n = j.CurrentTask or (j.JobData and j.JobData.CurrentTask)
-    local t = d and d.Tasks and n and d.Tasks[n]
-    return (t and t.CFrame) and true or false
-end
-
-local function jobAtual()
-    local j = G.__5A46_job
-    if jobUtil(j) then return j end
-    G.__5A46_job = nil
-    if os.clock() - ultimaVarredura < 10 then return nil end
-    ultimaVarredura = os.clock()
-    j = varrerJob()
-    if jobUtil(j) then G.__5A46_job = j return j end
-    return nil
-end
-
--- CFrame do alvo, texto, tarefa, indice
-local function objetivo()
-    local j = jobAtual()
-    if not j then return nil, "no job" end
-    local dados = j.JobData and j.JobData.Data
-    local tarefas = dados and dados.Tasks
-    local n = j.CurrentTask or j.JobData.CurrentTask
-    local t = tarefas and n and tarefas[n]
-    if not t or not t.CFrame then return nil, "job without target" end
-    return t.CFrame,
-        string.format("%s · %s %s", tostring(t.Task), tostring(t.AirportId), tostring(t.GateId)),
-        t, n
-end
-
---==================================================================
---                    LISTA DE JOBS (do proprio jogo)
---==================================================================
--- Leio o JobDB pra montar o seletor. Cada entrada tem Name e o id da
--- entrada e o mesmo id do card no menu Jobs (1,2,3,5).
-local JOBS = {}     -- { {id="2", nome="Cargo", tipo="Cargo"}, ... }
-do
-    local ok, DB = pcall(function() return require(RS.DB.JobDB) end)
-    if ok and DB and DB.Jobs then
-        for id, cfg in pairs(DB.Jobs) do
-            JOBS[#JOBS + 1] = {
-                id = tostring(id),
-                nome = tostring(cfg.Name or cfg.Type or id),
-                tipo = tostring(cfg.Type or cfg.Name or id),
-            }
-        end
-        table.sort(JOBS, function(a, b) return a.nome < b.nome end)
-    end
-end
-
-local function nomesDosJobs()
-    local out = {}
-    for _, j in ipairs(JOBS) do out[#out + 1] = j.nome end
-    if #out == 0 then out[1] = "Cargo" end
-    return out
-end
-
-local function jobPorNome(nome)
-    for _, j in ipairs(JOBS) do if j.nome == nome then return j end end
-    return nil
-end
-
-local jobEscolhido = jobPorNome("Cargo") or JOBS[1]
-
--- Comeca o job pelo card do menu do proprio jogo. Ele ja faz as
--- verificacoes que o servidor espera; eu so disparo o clique.
-local function comecarJob(id)
-    local gui = LP.PlayerGui:FindFirstChild("Jobs")
-    local menu = gui and gui:FindFirstChild("Menu")
-    local lista = menu and menu:FindFirstChild("List")
-    local card = lista and lista:FindFirstChild(tostring(id))
-    local bt = card and card:FindFirstChild("Bottom") and card.Bottom:FindFirstChild("Start")
-    if not bt then return false, "job card not found" end
-    if card:FindFirstChild("Unavailable") and card.Unavailable.Visible then
-        local t = card.Unavailable:FindFirstChild("Title")
-        return false, (t and t.Text ~= "" and t.Text) or "job locked"
-    end
-    if not getconnections then return false, "no getconnections" end
-    local cs = getconnections(bt.Activated)
-    if #cs == 0 then return false, "button not wired yet" end
-    for _, c in ipairs(cs) do pcall(function() c:Fire() end) end
-    return true
-end
-
---==================================================================
---                     MOVIMENTO E PARK BRAKE
---==================================================================
-local function fixar(av, cf)
-    av:PivotTo(cf)
-    local m = av.PrimaryPart
-    if m then
-        m.AssemblyLinearVelocity = Vector3.zero
-        m.AssemblyAngularVelocity = Vector3.zero
-    end
-end
-
--- O park brake. MEDIDO: preso 20 s deu 0.238 studs de erro; solto,
--- o aviao andou 47 studs em 10 s sozinho. Sem isto nao fecha entrega.
-RunService.Heartbeat:Connect(function()
-    if not travado or viajando then return end
-    if not souAtual() then return end
-    local av = meuAviao()
-    if av and av.PrimaryPart then fixar(av, travado) end
-end)
-
-local function destravar() travado = nil end
-
-local function travarAqui()
-    local av = meuAviao()
-    if not av then avisar("Aircraft", "no aircraft spawned", 3) return end
-    travado = av:GetPivot()
-    ultimoTxt = "park brake on"
-end
-
-local function segurar(av, cf, seg)
-    local fim = os.clock() + (seg or 1)
-    while os.clock() < fim do
-        if cancelar or not souAtual() then return end
-        if not (av and av.Parent and av.PrimaryPart) then return end
-        fixar(av, cf)
-        RunService.Heartbeat:Wait()
-    end
-end
-
-local function horizontal(v)
-    local h = Vector3.new(v.X, 0, v.Z)
-    if h.Magnitude < 0.001 then return Vector3.new(0, 0, -1) end
-    return h.Unit
-end
-
--- Trecho reto a velocidade constante, reescrevendo todo frame.
--- E ESTE movimento que o servidor conta como distancia voada.
-local function trecho(av, de, para, vel, rumo)
-    local dist = (para - de).Magnitude
-    if dist < 0.05 then return true end
-    local dur = dist / math.max(vel, 1)
-    local t0 = os.clock()
-    while true do
-        if cancelar or not souAtual() then return false end
-        if not (av and av.Parent and av.PrimaryPart) then return false end
-        local a = (os.clock() - t0) / dur
-        if a >= 1 then break end
-        local pos = de:Lerp(para, a)
-        fixar(av, CFrame.lookAt(pos, pos + rumo))
-        RunService.Heartbeat:Wait()
-    end
-    fixar(av, CFrame.lookAt(para, para + rumo))
-    return true
-end
-
--- Encaixa o aviao no ponto EXATO do portao e prende ali. Uso quando ele
--- ja esta por perto mas nao no lugar certo (portao vizinho), e no modo
--- teleporte. Se ja estiver nivelado nao levanta — evita o pulinho feio.
-local function encaixar(av, cfAlvo, segurarPor)
-    local rot = cfAlvo - cfAlvo.Position
-    local m = av.PrimaryPart
-    if not m then return nil end
-    if m.CFrame.UpVector.Y < 0.995 then
-        for _ = 1, 8 do
-            if cancelar or not souAtual() then return nil end
-            fixar(av, CFrame.new(cfAlvo.Position + Vector3.new(0, 60, 0)) * rot)
-            RunService.Heartbeat:Wait()
-        end
-    end
-    local alt = alturaNivelada(av)
-    local pouso = CFrame.new(cfAlvo.Position + Vector3.new(0, alt, 0)) * rot
-    segurar(av, pouso, segurarPor or T.assentar)
-    travado = pouso
-    return pouso
-end
-
--- Sobe -> atravessa -> mede a altura com o aviao ja reto -> desce ->
--- prende. Roda na propria thread; quem chama olha "viajando".
-local function irAte(cfAlvo, instantaneo)
-    if viajando then return false end
-    local av = meuAviao()
-    if not av then avisar("Aircraft", "no aircraft spawned", 3) return false end
-    if not sentado() then avisar("Aircraft", "sit in the pilot seat first", 4) return false end
-
-    viajando, cancelar = true, false
-    destravar()
-
-    task.spawn(function()
-        local ok, err = pcall(function()
-            local rotAlvo = cfAlvo - cfAlvo.Position
-
-            if instantaneo then
-                ultimoTxt = "teleported · pays $0"
-                local pouso = encaixar(av, cfAlvo, T.assentar)
-                if not T.travarNoGate then travado = nil end
-                return
-            end
-
-            local partida = av:GetPivot().Position
-            local mira    = cfAlvo.Position
-            local rumo    = horizontal(mira - partida)
-            local teto    = math.max(partida.Y, mira.Y) + T.altura
-            local p1 = Vector3.new(partida.X, teto, partida.Z)
-            local p2 = Vector3.new(mira.X,    teto, mira.Z)
-
-            local total = (p1 - partida).Magnitude + (p2 - p1).Magnitude + T.altura
-            ultimoTxt = string.format("flying %.0f studs", total)
-
-            if not trecho(av, partida, p1, VELOCIDADE, rumo) then return end
-            if not trecho(av, p1, p2, VELOCIDADE, rumo) then return end
-
-            -- aqui o aviao esta reto: agora sim a altura e confiavel
-            local alt = alturaNivelada(av)
-            local pouso = CFrame.new(mira + Vector3.new(0, alt, 0)) * rotAlvo
-            -- desce reto por cima do portao; os ultimos 20 studs bem
-            -- devagar, senao o chassi marca "Crashed" e o servidor passa
-            -- a recusar QUALQUER job novo (medi isso na pele)
-            local freada = pouso.Position + Vector3.new(0, 20, 0)
-            ultimoTxt = "descending"
-            if not trecho(av, p2, freada, T.aproxima, rumo) then return end
-            if not trecho(av, freada, pouso.Position, T.toque, rumo) then return end
-
-            ultimoTxt = "landing"
-            segurar(av, pouso, T.assentar)
-            if T.travarNoGate then travado = pouso end
-            ultimoTxt = "arrived"
-        end)
-        if not ok then
-            ultimoTxt = "error"
-            warn("[0x5A46] voo: " .. tostring(err))
-        end
-        viajando = false
-    end)
-    return true
-end
-
--- Espera o voo acabar. Se a tarefa mudar no meio do caminho (o pickup
--- fecha enquanto voo, por exemplo), aborto e o ciclo replaneja pro
--- destino novo em vez de pousar no lugar errado.
-local function esperarChegar(nEsperado)
-    while viajando and autoOn and not cancelar do
-        task.wait(0.3)
-        local _, _, _, n2 = objetivo()
-        if nEsperado and n2 and n2 ~= nEsperado then
-            cancelar = true
-            ultimoTxt = "auto · target changed, replanning"
-            break
-        end
-    end
-    repeat task.wait(0.1) until not viajando
-end
-
---==================================================================
---              ACELERAR O CONTADOR DE CARGA/PASSAGEIROS
---==================================================================
--- Ver a nota 7 do cabecalho. Quem enche o contador e um NPC andando
--- (Humanoid:MoveTo + MoveToFinished). Aumentar o WalkSpeed PIOROU (ele
--- passa do ponto e volta). O que funciona e por o NPC direto no
--- Humanoid.WalkToPoint — o MoveToFinished dispara quando ele encosta.
--- Os NPCs de job vivem embaixo da Camera, que so existe no meu cliente:
--- nao encosto em personagem de jogador nenhum.
-local carregadores = {}
-
-task.spawn(function()
-    while true do
-        task.wait(0.25)
-        if souAtual() and T.rapido then
-            pcall(function()
-                local novos = {}
-                local cam = workspace.CurrentCamera
-                if cam then
-                    for _, v in ipairs(cam:GetChildren()) do
-                        if v:IsA("Model") then
-                            for _, d in ipairs(v:GetDescendants()) do
-                                if d:IsA("Humanoid") then novos[#novos + 1] = d end
-                            end
-                        end
-                    end
-                end
-                carregadores = novos
-            end)
-        elseif #carregadores > 0 then
-            carregadores = {}
-        end
-    end
-end)
-
-RunService.Heartbeat:Connect(function()
-    if not (souAtual() and T.rapido) then return end
-    for _, h in ipairs(carregadores) do
-        if h.Parent then
-            local raiz = h.RootPart
-            local alvo = h.WalkToPoint
-            if raiz and alvo and alvo.Magnitude > 0 then
-                -- mantenho o Y do NPC: so corrijo o caminho no plano
-                local a = Vector3.new(alvo.X, raiz.Position.Y, alvo.Z)
-                if (raiz.Position - a).Magnitude > T.folga then
-                    raiz.CFrame = CFrame.new(a) * (raiz.CFrame - raiz.Position)
-                    raiz.AssemblyLinearVelocity = Vector3.zero
-                end
-            end
-        end
-    end
-end)
-
---==================================================================
---                   FARM DE DINHEIRO (vai e vem)
---==================================================================
-local function pernaDeFarm(av, dir)
-    local p0 = av:GetPivot().Position
-    local base = Vector3.new(p0.X, math.max(p0.Y, T.altura), p0.Z)
-    local t0 = os.clock()
-    while autoOn and modo == "Cash farm" and souAtual() and os.clock() - t0 < T.pernaFarm do
-        if not (av.Parent and av.PrimaryPart) then return end
-        local pos = base + dir * ((os.clock() - t0) * VELOCIDADE)
-        fixar(av, CFrame.lookAt(pos, pos + dir))
-        ultimoTxt = string.format("cash farm · %d studs/s", VELOCIDADE)
-        RunService.Heartbeat:Wait()
-    end
-end
-
---==================================================================
---                  O CICLO AUTOMATICO
---==================================================================
-local ultimaAssin, mudouEm = "", os.clock()
-
-task.spawn(function()
-    while true do
-        task.wait(0.8)
-        if not autoOn then mudouEm = os.clock() end
-        local ok = (not (souAtual() and autoOn)) or pcall(function()
-            local av = meuAviao()
-            if not av then ultimoTxt = "auto · no aircraft" return end
-            if not sentado() then ultimoTxt = "auto · sit in the pilot seat" return end
-
-            -------------------------------------------------- farm puro
-            if modo == "Cash farm" then
-                destravar()
-                pernaDeFarm(av, Vector3.new(1, 0, 0))
-                pernaDeFarm(av, Vector3.new(-1, 0, 0))
-                return
-            end
-
-            -------------------------------------------------- jobs
-            if quebrado() then
-                ultimoTxt = "auto · CRASHED, respawn the plane"
-                task.wait(3)
-                return
-            end
-
-            local j = jobAtual()
-            if not j then
-                local id = jobEscolhido and jobEscolhido.id or "2"
-                local feito, por = comecarJob(id)
-                ultimoTxt = feito
-                    and ("auto · starting " .. (jobEscolhido and jobEscolhido.nome or id))
-                    or  ("auto · " .. tostring(por))
-                -- o gancho no .new avisa assim que o servidor responde (~2 s)
-                local fim = os.clock() + 8
-                repeat task.wait(0.4) until G.__5A46_job or os.clock() > fim or not autoOn
-                if not G.__5A46_job then task.wait(2) end
-                return
-            end
-
-            local cf, txt, tarefa, n = objetivo()
-            if not cf then ultimoTxt = "auto · " .. tostring(txt) task.wait(1) return end
-
-            ----------------------------------------- vigia de travamento
-            -- Se nada muda (tarefa, progresso, job) por muito tempo, e
-            -- porque ficou parado achando que chegou. Solta e vai de novo.
-            local assin = table.concat({
-                tostring(j.UUID), tostring(n), tostring(tarefa and tarefa.Progress),
-            }, "/")
-            -- enquanto o HUD mostra "Loading/Dropping Off" o jogo ESTA
-            -- trabalhando, mesmo com o Progress parado em 0. Nao conto
-            -- esse tempo como travamento, senao eu interromperia a carga.
-            local ja = LP.PlayerGui:FindFirstChild("HUD")
-            ja = ja and ja:FindFirstChild("JobAction")
-            if assin ~= ultimaAssin or (ja and ja.Visible) then
-                ultimaAssin, mudouEm = assin, os.clock()
-            end
-            local parado = os.clock() - mudouEm
-
-            local dist = (av.PrimaryPart.Position - cf.Position).Magnitude
-            if dist > PERTO or parado > PACIENCIA then
-                if parado > PACIENCIA then
-                    ultimoTxt = "auto · stuck, going again"
-                    mudouEm = os.clock()
-                end
-                destravar()
-                irAte(cf, modo == "Instant teleport")
-                esperarChegar(n)
-            else
-                -- Esta perto — mas perto nao basta: os portoes vizinhos
-                -- ficam a 40-60 studs. Se o freio nao estiver no alvo
-                -- certo, encaixo no ponto exato antes de esperar.
-                if (not travado) or (travado.Position - cf.Position).Magnitude > ENCAIXADO then
-                    ultimoTxt = "auto · lining up on " .. tostring(txt)
-                    encaixar(av, cf, 1.0)
-                end
-                ultimoTxt = string.format("auto · at gate (%s) %.0fs", tostring(txt), parado)
-                task.wait(1)
-            end
-        end)
-        if not ok then task.wait(2) end
-    end
-end)
-
---==================================================================
---                       LISTA DE PORTOES
---==================================================================
-local function aeroportos()
-    local out = {}
-    local pasta = workspace:FindFirstChild("Airports")
-    if not pasta then return out end
-    for _, a in ipairs(pasta:GetChildren()) do
-        local g = a:FindFirstChild("Gates")
-        if g and #g:GetChildren() > 0 then out[#out + 1] = a.Name end
-    end
-    table.sort(out)
-    return out
-end
-
-local function portoes(codigo)
-    local out = {}
-    local pasta = workspace:FindFirstChild("Airports")
-    local a = pasta and pasta:FindFirstChild(codigo)
-    local g = a and a:FindFirstChild("Gates")
-    if not g then return out end
-    for _, m in ipairs(g:GetChildren()) do
-        local tipo = m:GetAttribute("Type")
-        out[#out + 1] = m.Name .. (tipo and ("  [" .. tipo .. "]") or "")
-    end
-    table.sort(out)
-    return out
-end
-
-local function cfDoPortao(codigo, nomeSujo)
-    if not nomeSujo then return nil end
-    local nome = nomeSujo:gsub("%s*%[.-%]%s*$", "")
-    local pasta = workspace:FindFirstChild("Airports")
-    local a = pasta and pasta:FindFirstChild(codigo)
-    local g = a and a:FindFirstChild("Gates")
-    local m = g and g:FindFirstChild(nome)
-    local loc = m and m:FindFirstChild("Location")
-    if not loc then return nil end
-    return CFrame.lookAt(loc.Position, loc.Position + loc.CFrame.LookVector)
-end
-
---==================================================================
---                            A ABA
---==================================================================
-do
-    local aba = P.Tab("Job", "target")
-
-    ------------------------------------------------ OBJETIVO
-    local s = aba:Section("Objective", nil, 1)
-    local vitrine = s:Status()
-
-    s:Dropdown({ Name = "Mode", Items = MODOS, Default = modo,
-        Callback = function(v) modo = v end })
-
-    s:Dropdown({ Name = "Job", Items = nomesDosJobs(),
-        Default = jobEscolhido and jobEscolhido.nome or nil,
-        Callback = function(v) jobEscolhido = jobPorNome(v) or jobEscolhido end })
-
-    local tgAuto, tgBrake
-    tgAuto = s:Toggle({ Name = "Auto job", Default = false, Bell = false,
-        Callback = function(v)
-            autoOn = v
-            cancelar = false
-            if not v then ultimoTxt = "idle" end
-        end })
-
-    s:Button({ Name = "Go once  ·  uses the mode above", Callback = function()
-        if modo == "Cash farm" then
-            avisar("Job", "pick Fly or Teleport for a one-shot", 3)
-            return
-        end
-        local cf, txt = objetivo()
-        if not cf then avisar("Job", txt, 3) return end
-        irAte(cf, modo == "Instant teleport")
-    end })
-
-    s:Button({ Name = "Stop  ·  release everything", Callback = function()
-        cancelar = true
-        autoOn = false
-        destravar()
-        ultimoTxt = "stopped"
-        if tgAuto then tgAuto:Set(false, true) end
-        if tgBrake then tgBrake:Set(false, true) end
-    end })
-
-    ------------------------------------------------ VOO
-    local s2 = aba:Section("Flight", nil, 1)
-    s2:Label("speed fixed at " .. VELOCIDADE .. " studs/s")
-    s2:Slider({ Name = "Cruise height", Min = 300, Max = 6000, Default = T.altura,
-        Callback = function(v) T.altura = v end })
-    s2:Slider({ Name = "Descent speed", Min = 100, Max = 1500, Default = T.aproxima,
-        Callback = function(v) T.aproxima = v end })
-    s2:Slider({ Name = "Hold on arrival (s)", Min = 0.5, Max = 8, Default = T.assentar, Decimals = 1,
-        Callback = function(v) T.assentar = v end })
-    tgBrake = s2:Toggle({ Name = "Park brake", Default = false, Bell = false,
-        Callback = function(v) if v then travarAqui() else destravar() end end })
-    s2:Label("without it the plane rolls out of the circle")
-    s2:Checkbox({ Name = "Park brake on arrival", Default = T.travarNoGate,
-        Callback = function(v) T.travarNoGate = v end })
-
-    ------------------------------------------------ CARREGAMENTO
-    local s5 = aba:Section("Loading", nil, 1)
-    s5:Toggle({ Name = "Fast load", Default = T.rapido, Bell = false,
-        Callback = function(v) T.rapido = v end })
-    s5:Label("5 cargo: 10.5s  ->  2.0s      8 pax: ~24s  ->  4.0s")
-    s5:Label("pay is not affected")
-
-    ------------------------------------------------ DINHEIRO
-    local s3 = aba:Section("Cash", nil, 2)
-    local vitrine2 = s3:Status()
-    s3:Label("Cash farm mode pays with no job · ~$126 per mile")
-    s3:Slider({ Name = "Farm leg (s)", Min = 5, Max = 60, Default = T.pernaFarm,
-        Callback = function(v) T.pernaFarm = v end })
-
-    ------------------------------------------------ PORTOES
-    local s4 = aba:Section("Gates", nil, 2)
-    local escolhaAero = aeroportos()[1] or "ANC"
-    local escolhaGate = portoes(escolhaAero)[1]
-    local ddGate
-    local ddAero = s4:Dropdown({ Name = "Airport", Items = aeroportos(), Default = escolhaAero,
-        Callback = function(v)
-            escolhaAero = v
-            escolhaGate = portoes(v)[1]
-            if ddGate and ddGate.SetItems then ddGate:SetItems(portoes(v)) end
-        end })
-    ddGate = s4:Dropdown({ Name = "Gate", Items = portoes(escolhaAero), Default = escolhaGate,
-        Callback = function(v) escolhaGate = v end })
-    s4:Button({ Name = "Fly there", Callback = function()
-        local cf = cfDoPortao(escolhaAero, escolhaGate)
-        if not cf then avisar("Gates", "gate not loaded yet", 3) return end
-        irAte(cf, modo == "Instant teleport")
-    end })
-    s4:Button({ Name = "Refresh list", Callback = function()
-        if ddAero and ddAero.SetItems then ddAero:SetItems(aeroportos(), true) end
-        if ddGate and ddGate.SetItems then ddGate:SetItems(portoes(escolhaAero)) end
-        avisar("Gates", #aeroportos() .. " airports loaded", 2)
-    end })
-
-    ------------------------------------------------ VITRINES
-    task.spawn(function()
-        local cashAnt, tAnt, porMin = nil, os.clock(), 0
-        while souAtual() do
-            pcall(function()
-                local av = meuAviao()
-                local cf, txt = objetivo()
-                local d = (cf and av) and (av.PrimaryPart.Position - cf.Position).Magnitude or nil
-                -- Se o chassi marcou Crashed, o servidor recusa job novo em
-                -- silencio. Mostro na cara pra nao ficar procurando bug.
-                vitrine.Text = string.format("target: %s\ndistance: %s\nstate: %s%s",
-                    cf and txt or "—",
-                    d and string.format("%.0f studs · %.1f km", d, d * 0.0005) or "—",
-                    quebrado() and "CRASHED · respawn the plane" or ultimoTxt,
-                    travado and "  [brake]" or "")
-
-                -- o freio liga sozinho ao pousar; deixo o botao de acordo
-                if tgBrake and tgBrake.Get and tgBrake:Get() ~= (travado ~= nil) then
-                    tgBrake:Set(travado ~= nil, true)
-                end
-
-                local st = LP:FindFirstChild("leaderstats")
-                local cash = st and st:FindFirstChild("Cash")
-                local mil  = st and st:FindFirstChild("Miles Flown")
-                if cash then
-                    local agora = os.clock()
-                    if not cashAnt then
-                        cashAnt, tAnt = cash.Value, agora
-                    elseif agora - tAnt >= 6 then
-                        porMin = (cash.Value - cashAnt) / (agora - tAnt) * 60
-                        cashAnt, tAnt = cash.Value, agora
-                    end
-                    vitrine2.Text = string.format("cash: $%s\nmiles flown: %s\nrate: $%.0f / min",
-                        tostring(cash.Value), tostring(mil and mil.Value or "—"), porMin)
-                end
-            end)
-            task.wait(0.5)
-        end
-    end)
-end
-
-getgenv().Aviao5A46 = {
-    cfg = T,
-    velocidade = VELOCIDADE,
-    aviao = meuAviao,
-    job = jobAtual,
-    jobs = JOBS,
-    objetivo = objetivo,
-    irAte = irAte,
-    comecarJob = comecarJob,
-    travar = travarAqui,
-    destravar = destravar,
-}
-
-  end)
-  if not ok then warn("[0x5A46] aba aviao_aba.lua falhou: " .. tostring(err)) end
-end)()
-
-;(function()
-  local ok, err = pcall(function()
---[[=================================================================
-    PLAYER  ·  aba do painel 0x5A46
-    -------------------------------------------------------------------
-    O voo aqui e o sFLY do Infinite Yield, portado fiel. Ele nao tem
-    rampa de aceleracao nem inclinacao:
-
-      SPEED = 50 quando tem tecla segurada, 0 quando nao tem.
-      BV.Velocity = ((cam.LookVector * (F+B))
-                     + ((cam.CFrame * CFrame.new(L+R, (F+B+Q+E)*0.2, 0).p)
-                        - cam.CFrame.p)) * SPEED
-      BG.CFrame = cam.CFrame     -- reto, sem CFrame.Angles
-
-    Tres detalhes que dao o jeitao e que sao facseis de errar:
-      1) o deslocamento lateral sai de um CFrame RELATIVO a camera, nao
-         de RightVector puro — por isso acompanha a inclinacao dela em
-         vez de deslizar reto;
-      2) o (F+B+Q+E)*0.2 no Y: andar pra frente ja levanta um pouco
-         conforme o angulo da camera. E o "peso" do voo;
-      3) sobe/desce e Q e E com o dobro da forca (*2).
-
-    A velocidade do IY e MULTIPLICADOR: 1 vira 50 studs/s. Por isso o
-    slider vai de 1 a 20 e nao em studs.
-
-    POR QUE VOO E DIFERENTE DO TELEPORTE NESTE JOGO: o teleporte falhava
-    porque eu escrevia CFrame direto e o servidor so aceita ~250 studs
-    assim. O voo empurra por FISICA (BodyVelocity), que e movimento
-    legitimo — o servidor aceita sem limite de distancia. Medi os dois.
-
-    Os nomes das instancias comecam com 0x5A46_ de proposito, pra
-    qualquer anti-force do painel nao apagar o proprio voo.
-===================================================================]]
-
-local P = getgenv().Painel5A46
-if not P then return end
-local souAtual = P.souAtual
-local function avisar(t, x, s) P.notify(t, x, s or 3) end
-
-local Players    = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local UIS        = game:GetService("UserInputService")
-local LP = Players.LocalPlayer
-
-local J = { fly = false, flyVel = 1 }
-
-local function char() return LP.Character end
-local function hrp()
-    local c = char()
-    return c and c:FindFirstChild("HumanoidRootPart")
-end
-local function hum()
-    local c = char()
-    return c and c:FindFirstChildWhichIsA("Humanoid")
-end
-
-local Camera = workspace.CurrentCamera
-workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
-    if workspace.CurrentCamera then Camera = workspace.CurrentCamera end
-end)
-
---==================================================================
---                            O VOO
---==================================================================
-local bg, bv
-local CONTROL  = { F = 0, B = 0, L = 0, R = 0, Q = 0, E = 0 }
-local lCONTROL = { F = 0, B = 0, L = 0, R = 0, Q = 0, E = 0 }
-local SPEED = 0
-
-local function limparVoo()
-    if bg then bg:Destroy() bg = nil end
-    if bv then bv:Destroy() bv = nil end
-    SPEED = 0
-    for k in pairs(CONTROL) do CONTROL[k] = 0 lCONTROL[k] = 0 end
-end
-
-local function montarVoo()
-    local T = hrp()
-    if not T then return false end
-    limparVoo()
-    bg = Instance.new("BodyGyro")
-    bg.Name = "0x5A46_flyGyro"
-    bg.P = 9e4
-    bg.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
-    bg.CFrame = T.CFrame
-    bg.Parent = T
-    bv = Instance.new("BodyVelocity")
-    bv.Name = "0x5A46_flyVel"
-    bv.Velocity = Vector3.new(0, 0, 0)
-    bv.MaxForce = Vector3.new(9e9, 9e9, 9e9)
-    bv.Parent = T
-    return true
-end
-
-local function ligarVoo(v)
-    J.fly = v
-    local h = hum()
-    if v then
-        if not montarVoo() then J.fly = false return false end
-        if h then h.PlatformStand = true end
-        return true
-    end
-    limparVoo()
-    if h then h.PlatformStand = false end
-    return true
-end
-
--- Os nomes seguem o IY: a tecla E enche CONTROL.Q e a tecla Q enche
--- CONTROL.E. Parece trocado, mas e assim na fonte e a conta usa desse
--- jeito — deixei igual pra nao inventar bug.
-local MAPA = {
-    [Enum.KeyCode.W] = { "F",  1 },
-    [Enum.KeyCode.S] = { "B", -1 },
-    [Enum.KeyCode.A] = { "L", -1 },
-    [Enum.KeyCode.D] = { "R",  1 },
-    [Enum.KeyCode.E] = { "Q",  2 },
-    [Enum.KeyCode.Q] = { "E", -2 },
-}
-UIS.InputBegan:Connect(function(i, digitando)
-    if digitando or not J.fly then return end
-    local m = MAPA[i.KeyCode]
-    if m then CONTROL[m[1]] = m[2] end
-end)
-UIS.InputEnded:Connect(function(i)
-    local m = MAPA[i.KeyCode]
-    if m then CONTROL[m[1]] = 0 end
-end)
-
-RunService.Heartbeat:Connect(function()
-    if not (souAtual() and J.fly) then return end
-    local T, h = hrp(), hum()
-    if not (T and Camera) then return end
-    if not (bg and bg.Parent and bv and bv.Parent) then
-        if not montarVoo() then return end
-    end
-    if h then h.PlatformStand = true end
-
-    local vel = J.flyVel
-    local F, B = CONTROL.F * vel, CONTROL.B * vel
-    local L, R = CONTROL.L * vel, CONTROL.R * vel
-    local Q, E = CONTROL.Q * vel, CONTROL.E * vel
-    local mexendo = (L + R) ~= 0 or (F + B) ~= 0 or (Q + E) ~= 0
-
-    if mexendo then SPEED = 50 elseif SPEED ~= 0 then SPEED = 0 end
-
-    if mexendo then
-        bv.Velocity = ((Camera.CFrame.LookVector * (F + B))
-            + ((Camera.CFrame * CFrame.new(L + R, (F + B + Q + E) * 0.2, 0).Position)
-               - Camera.CFrame.Position)) * SPEED
-        lCONTROL.F, lCONTROL.B = CONTROL.F, CONTROL.B
-        lCONTROL.L, lCONTROL.R = CONTROL.L, CONTROL.R
-        lCONTROL.Q, lCONTROL.E = CONTROL.Q, CONTROL.E
-    elseif SPEED ~= 0 then
-        local lF, lB = lCONTROL.F * vel, lCONTROL.B * vel
-        local lL, lR = lCONTROL.L * vel, lCONTROL.R * vel
-        local lQ, lE = lCONTROL.Q * vel, lCONTROL.E * vel
-        bv.Velocity = ((Camera.CFrame.LookVector * (lF + lB))
-            + ((Camera.CFrame * CFrame.new(lL + lR, (lF + lB + lQ + lE) * 0.2, 0).Position)
-               - Camera.CFrame.Position)) * SPEED
-    else
-        bv.Velocity = Vector3.new(0, 0, 0)
-    end
-    bg.CFrame = Camera.CFrame
-end)
-
--- morreu ou trocou de personagem: remonta se o voo estava ligado
-LP.CharacterAdded:Connect(function()
-    task.wait(0.8)
-    if souAtual() and J.fly then
-        montarVoo()
-        local h = hum()
-        if h then h.PlatformStand = true end
-    end
-end)
-
---==================================================================
---                            A ABA
---==================================================================
-do
-    local aba = P.Tab("Player", "person")
-
-    local s = aba:Section("Fly", nil, 1)
-    local tg
-    tg = s:Toggle({ Name = "Fly", Default = false, Bell = false,
-        Keybind = { Key = Enum.KeyCode.X },
-        Callback = function(v)
-            if not ligarVoo(v) then
-                avisar("Player", "No character", 3)
-                if tg then tg:Set(false, true) end
-            end
-        end })
-    s:Label("W A S D  ·  Q E")
-    s:Slider({ Name = "Fly speed", Min = 1, Max = 20, Default = J.flyVel, Decimals = 1,
-        Callback = function(v) J.flyVel = v end })
-
-    local s2 = aba:Section("Status", nil, 2)
-    local vitrine = s2:Status()
-    task.spawn(function()
-        while souAtual() do
-            local r = hrp()
-            local v = r and r.AssemblyLinearVelocity.Magnitude or 0
-            vitrine.Text = string.format("fly: %s\nspeed setting: %.1f  (=%.0f studs/s)\nmoving at: %.0f studs/s",
-                J.fly and "on" or "off", J.flyVel, J.flyVel * 50, v)
-            task.wait(0.4)
-        end
-    end)
-    s2:Button({ Name = "Stop and drop", Callback = function()
-        J.fly = false
-        ligarVoo(false)
-        if tg then tg:Set(false, true) end
-    end })
-end
-
-getgenv().Fly5A46 = { cfg = J, ligar = ligarVoo, CONTROL = CONTROL }
-
-  end)
-  if not ok then warn("[0x5A46] aba player_fly_aba.lua falhou: " .. tostring(err)) end
-end)()
+return f()
