@@ -1958,6 +1958,14 @@ local T = {
     pernaFarm  = 25,     -- segundos em cada sentido do vai-e-vem
 }
 
+-- MEDIDO no KEF: Gate 40 -> 42 -> 44 ficam a 60 e 59 studs um do outro.
+-- No SXM, Gate 5 e Gate 6 ficam a 40 studs. Ou seja, "perto do portao"
+-- tem que ser um numero PEQUENO, senao o auto acha que ja chegou quando
+-- na verdade esta no portao vizinho — e ai fica preso la parado.
+local PERTO = 20        -- studs
+local ENCAIXADO = 4     -- se o freio esta a mais que isso do alvo, reencaixa
+local PACIENCIA = 35    -- segundos sem nada mudar antes de tentar de novo
+
 local MODOS = { "Fly", "Instant teleport", "Cash farm" }
 local modo    = "Fly"
 
@@ -2044,29 +2052,48 @@ local function varrerJob()
     if not getgc or #CLASSES == 0 then return nil end
     local ok, lista = pcall(getgc, true)
     if not ok then return nil end
+    local morto
     for _, o in ipairs(lista) do
         if type(o) == "table" then
             local mt = getmetatable(o)
             for _, C in ipairs(CLASSES) do
-                if mt == C then return o end
+                -- pode ter job velho na memoria junto com o vivo; prefiro
+                -- o que ainda tem tarefa pra fazer
+                if mt == C then
+                    if o.JobData and o.CurrentTask then return o end
+                    morto = morto or o
+                end
             end
         end
     end
-    return nil
+    return morto
 end
 
 -- getgc(true) varre a memoria inteira: e caro demais pra chamar toda hora.
 -- Com os ganchos instalados so preciso varrer quando o painel entra com um
 -- job ja rodando. Entao: no maximo uma varredura a cada 10 segundos.
 local ultimaVarredura = -999
+-- Um job so conta como vivo se der pra saber PRA ONDE ir. Quando o job
+-- termina o modulo limpa o CurrentTask mas a tabela continua na memoria;
+-- se eu aceitasse ela, o auto ficaria repetindo "job without target" pra
+-- sempre e nunca comecaria outro. Foi por isso que ele parava do nada.
+local function jobUtil(j)
+    if not j then return false end
+    if j.Destroyed then return false end
+    local d = j.JobData and j.JobData.Data
+    local n = j.CurrentTask or (j.JobData and j.JobData.CurrentTask)
+    local t = d and d.Tasks and n and d.Tasks[n]
+    return (t and t.CFrame) and true or false
+end
+
 local function jobAtual()
     local j = G.__5A46_job
-    if j and not j.Destroyed and j.JobData then return j end
+    if jobUtil(j) then return j end
     G.__5A46_job = nil
     if os.clock() - ultimaVarredura < 10 then return nil end
     ultimaVarredura = os.clock()
     j = varrerJob()
-    if j and not j.Destroyed then G.__5A46_job = j return j end
+    if jobUtil(j) then G.__5A46_job = j return j end
     return nil
 end
 
@@ -2204,6 +2231,27 @@ local function trecho(av, de, para, vel, rumo)
     return true
 end
 
+-- Encaixa o aviao no ponto EXATO do portao e prende ali. Uso quando ele
+-- ja esta por perto mas nao no lugar certo (portao vizinho), e no modo
+-- teleporte. Se ja estiver nivelado nao levanta — evita o pulinho feio.
+local function encaixar(av, cfAlvo, segurarPor)
+    local rot = cfAlvo - cfAlvo.Position
+    local m = av.PrimaryPart
+    if not m then return nil end
+    if m.CFrame.UpVector.Y < 0.995 then
+        for _ = 1, 8 do
+            if cancelar or not souAtual() then return nil end
+            fixar(av, CFrame.new(cfAlvo.Position + Vector3.new(0, 60, 0)) * rot)
+            RunService.Heartbeat:Wait()
+        end
+    end
+    local alt = alturaNivelada(av)
+    local pouso = CFrame.new(cfAlvo.Position + Vector3.new(0, alt, 0)) * rot
+    segurar(av, pouso, segurarPor or T.assentar)
+    travado = pouso
+    return pouso
+end
+
 -- Sobe -> atravessa -> mede a altura com o aviao ja reto -> desce ->
 -- prende. Roda na propria thread; quem chama olha "viajando".
 local function irAte(cfAlvo, instantaneo)
@@ -2220,16 +2268,9 @@ local function irAte(cfAlvo, instantaneo)
             local rotAlvo = cfAlvo - cfAlvo.Position
 
             if instantaneo then
-                -- nivela primeiro pra medir a altura certa, depois assenta
-                for _ = 1, 8 do
-                    fixar(av, CFrame.new(cfAlvo.Position + Vector3.new(0, 60, 0)) * rotAlvo)
-                    RunService.Heartbeat:Wait()
-                end
-                local alt = alturaNivelada(av)
-                local pouso = CFrame.new(cfAlvo.Position + Vector3.new(0, alt, 0)) * rotAlvo
                 ultimoTxt = "teleported · pays $0"
-                segurar(av, pouso, T.assentar)
-                if T.travarNoGate then travado = pouso end
+                local pouso = encaixar(av, cfAlvo, T.assentar)
+                if not T.travarNoGate then travado = nil end
                 return
             end
 
@@ -2271,8 +2312,20 @@ local function irAte(cfAlvo, instantaneo)
     return true
 end
 
-local function esperarChegar()
-    repeat task.wait(0.3) until not viajando or not autoOn or cancelar
+-- Espera o voo acabar. Se a tarefa mudar no meio do caminho (o pickup
+-- fecha enquanto voo, por exemplo), aborto e o ciclo replaneja pro
+-- destino novo em vez de pousar no lugar errado.
+local function esperarChegar(nEsperado)
+    while viajando and autoOn and not cancelar do
+        task.wait(0.3)
+        local _, _, _, n2 = objetivo()
+        if nEsperado and n2 and n2 ~= nEsperado then
+            cancelar = true
+            ultimoTxt = "auto · target changed, replanning"
+            break
+        end
+    end
+    repeat task.wait(0.1) until not viajando
 end
 
 --==================================================================
@@ -2294,9 +2347,12 @@ end
 --==================================================================
 --                  O CICLO AUTOMATICO
 --==================================================================
+local ultimaAssin, mudouEm = "", os.clock()
+
 task.spawn(function()
     while true do
         task.wait(0.8)
+        if not autoOn then mudouEm = os.clock() end
         local ok = (not (souAtual() and autoOn)) or pcall(function()
             local av = meuAviao()
             if not av then ultimoTxt = "auto · no aircraft" return end
@@ -2331,18 +2387,44 @@ task.spawn(function()
                 return
             end
 
-            local cf, txt = objetivo()
+            local cf, txt, tarefa, n = objetivo()
             if not cf then ultimoTxt = "auto · " .. tostring(txt) task.wait(1) return end
 
+            ----------------------------------------- vigia de travamento
+            -- Se nada muda (tarefa, progresso, job) por muito tempo, e
+            -- porque ficou parado achando que chegou. Solta e vai de novo.
+            local assin = table.concat({
+                tostring(j.UUID), tostring(n), tostring(tarefa and tarefa.Progress),
+            }, "/")
+            -- enquanto o HUD mostra "Loading/Dropping Off" o jogo ESTA
+            -- trabalhando, mesmo com o Progress parado em 0. Nao conto
+            -- esse tempo como travamento, senao eu interromperia a carga.
+            local ja = LP.PlayerGui:FindFirstChild("HUD")
+            ja = ja and ja:FindFirstChild("JobAction")
+            if assin ~= ultimaAssin or (ja and ja.Visible) then
+                ultimaAssin, mudouEm = assin, os.clock()
+            end
+            local parado = os.clock() - mudouEm
+
             local dist = (av.PrimaryPart.Position - cf.Position).Magnitude
-            if dist > 120 then
+            if dist > PERTO or parado > PACIENCIA then
+                if parado > PACIENCIA then
+                    ultimoTxt = "auto · stuck, going again"
+                    mudouEm = os.clock()
+                end
+                destravar()
                 irAte(cf, modo == "Instant teleport")
-                esperarChegar()
+                esperarChegar(n)
             else
-                -- ja esta no circulo: fica preso deixando carregar/descarregar
-                if not travado then travado = av:GetPivot() end
-                ultimoTxt = "auto · at gate (" .. tostring(txt) .. ")"
-                task.wait(1.5)
+                -- Esta perto — mas perto nao basta: os portoes vizinhos
+                -- ficam a 40-60 studs. Se o freio nao estiver no alvo
+                -- certo, encaixo no ponto exato antes de esperar.
+                if (not travado) or (travado.Position - cf.Position).Magnitude > ENCAIXADO then
+                    ultimoTxt = "auto · lining up on " .. tostring(txt)
+                    encaixar(av, cf, 1.0)
+                end
+                ultimoTxt = string.format("auto · at gate (%s) %.0fs", tostring(txt), parado)
+                task.wait(1)
             end
         end)
         if not ok then task.wait(2) end
