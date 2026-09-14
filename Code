@@ -1927,7 +1927,31 @@ print("[0x5A46] painel pronto · v" .. MINHA_VERSAO)
        Bounding box torto deu 2,61; reto deu 1,95; o certo era 2,04.
        Por isso a altura e medida depois do trecho de cruzeiro.
 
-    7) AVIAO "Crashed" TRAVA TODOS OS JOBS.
+    7) O CONTADOR "Loading Cargo 3/5" E ANIMACAO DO CLIENTE.
+       Varri as 20.190 funcoes vivas na memoria atras do texto e achei
+       as duas que escrevem no HUD.JobAction. Constantes delas:
+         "HUD" | "JobAction" | "Picking Up " | "Dropping Off " |
+         "Amount" | "0/" | "CargoUnits" | "Path"
+       e o upvalue que faz o servico:
+         "MoveToFinished" | "Connect" | "MoveTo" | "os" | "clock"
+       Ou seja: e um NPC com Humanoid que ANDA do portao ate o aviao, e
+       cada chegada soma 1. Achei ele: workspace.Camera.NPC, WalkSpeed
+       6.4. O servidor nao manda no ritmo — quem manda e o cliente.
+
+       PRIMEIRA TENTATIVA, ERRADA: subir o WalkSpeed pra 80. PIOROU.
+         padrao  (6.4) : 5 cargas em 10,54 s
+         WalkSpeed 80  : 5 cargas em 19,13 s
+       Em velocidade alta o NPC passa do ponto e fica indo e voltando,
+       entao o MoveToFinished demora MAIS. Boa lição: medir, nao supor.
+
+       O QUE FUNCIONA: teleportar o NPC direto pro Humanoid.WalkToPoint.
+       O MoveToFinished dispara na hora que ele encosta no ponto.
+         5 cargas   : 1,99 s / 2,06 s / 1,00 s   (contra 10,54 s)
+         8 passageiros: 4,05 s
+       E o pagamento nao muda: os jobs fecharam pagando $28.100 e
+       $37.700 normalmente, com "Distance Flown" cheia.
+
+    8) AVIAO "Crashed" TRAVA TODOS OS JOBS.
        Quando States.Crashed vira true o servidor recusa comecar
        QUALQUER job, em silencio (testei carga e passageiro, nenhum
        nasce). Nao e ban. Precisa dar respawn no aviao. O painel avisa
@@ -1956,6 +1980,8 @@ local T = {
     assentar   = 3.0,    -- segundos preso antes de considerar "chegou"
     travarNoGate = true,
     pernaFarm  = 25,     -- segundos em cada sentido do vai-e-vem
+    rapido     = true,   -- acelera o contador de carga/passageiros
+    folga      = 2.5,    -- quao perto do WalkToPoint ja vale como "chegou"
 }
 
 -- MEDIDO no KEF: Gate 40 -> 42 -> 44 ficam a 60 e 59 studs um do outro.
@@ -2329,6 +2355,59 @@ local function esperarChegar(nEsperado)
 end
 
 --==================================================================
+--              ACELERAR O CONTADOR DE CARGA/PASSAGEIROS
+--==================================================================
+-- Ver a nota 7 do cabecalho. Quem enche o contador e um NPC andando
+-- (Humanoid:MoveTo + MoveToFinished). Aumentar o WalkSpeed PIOROU (ele
+-- passa do ponto e volta). O que funciona e por o NPC direto no
+-- Humanoid.WalkToPoint — o MoveToFinished dispara quando ele encosta.
+-- Os NPCs de job vivem embaixo da Camera, que so existe no meu cliente:
+-- nao encosto em personagem de jogador nenhum.
+local carregadores = {}
+
+task.spawn(function()
+    while true do
+        task.wait(0.25)
+        if souAtual() and T.rapido then
+            pcall(function()
+                local novos = {}
+                local cam = workspace.CurrentCamera
+                if cam then
+                    for _, v in ipairs(cam:GetChildren()) do
+                        if v:IsA("Model") then
+                            for _, d in ipairs(v:GetDescendants()) do
+                                if d:IsA("Humanoid") then novos[#novos + 1] = d end
+                            end
+                        end
+                    end
+                end
+                carregadores = novos
+            end)
+        elseif #carregadores > 0 then
+            carregadores = {}
+        end
+    end
+end)
+
+RunService.Heartbeat:Connect(function()
+    if not (souAtual() and T.rapido) then return end
+    for _, h in ipairs(carregadores) do
+        if h.Parent then
+            local raiz = h.RootPart
+            local alvo = h.WalkToPoint
+            if raiz and alvo and alvo.Magnitude > 0 then
+                -- mantenho o Y do NPC: so corrijo o caminho no plano
+                local a = Vector3.new(alvo.X, raiz.Position.Y, alvo.Z)
+                if (raiz.Position - a).Magnitude > T.folga then
+                    raiz.CFrame = CFrame.new(a) * (raiz.CFrame - raiz.Position)
+                    raiz.AssemblyLinearVelocity = Vector3.zero
+                end
+            end
+        end
+    end
+end)
+
+--==================================================================
 --                   FARM DE DINHEIRO (vai e vem)
 --==================================================================
 local function pernaDeFarm(av, dir)
@@ -2530,6 +2609,13 @@ do
     s2:Label("without it the plane rolls out of the circle")
     s2:Checkbox({ Name = "Park brake on arrival", Default = T.travarNoGate,
         Callback = function(v) T.travarNoGate = v end })
+
+    ------------------------------------------------ CARREGAMENTO
+    local s5 = aba:Section("Loading", nil, 1)
+    s5:Toggle({ Name = "Fast load", Default = T.rapido, Bell = false,
+        Callback = function(v) T.rapido = v end })
+    s5:Label("5 cargo: 10.5s  ->  2.0s      8 pax: ~24s  ->  4.0s")
+    s5:Label("pay is not affected")
 
     ------------------------------------------------ DINHEIRO
     local s3 = aba:Section("Cash", nil, 2)
